@@ -3,7 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
-	mrt "github.com/ramrunner/protoparse/protocol/mrt"
+	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
 	"io"
 	"log"
 	"os"

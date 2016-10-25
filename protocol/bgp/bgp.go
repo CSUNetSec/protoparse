@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/CSUNetSec/protoparse"
+	pb "github.com/CSUNetSec/protoparse/pb"
 	"github.com/golang/protobuf/proto"
-	"github.com/ramrunner/protoparse"
-	pb "github.com/ramrunner/protoparse/pb"
 	"net"
 )
 

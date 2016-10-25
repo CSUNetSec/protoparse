@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/CSUNetSec/protoparse"
+	pb "github.com/CSUNetSec/protoparse/pb"
+	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
 	"github.com/golang/protobuf/proto"
-	"github.com/ramrunner/protoparse"
-	pb "github.com/ramrunner/protoparse/pb"
-	bgp "github.com/ramrunner/protoparse/protocol/bgp"
 	"net"
 	"time"
 )
