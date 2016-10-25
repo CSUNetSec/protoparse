@@ -1,0 +1,32 @@
+[protoparse]
+
+ [general]
+ a library to parse various protocols to protocol buffers
+ current protocols:
+ - MRT (BGP4MP)
+ - BGP
+
+ The main interface in protoparse is PbVal and the types that implement it
+ are structures that usually have a buf []byte buffer that as the messages are
+ parsed it is advanced and a a dest protocol buffer pointer that the data is stored.
+ The functions of the interface is Parse() (PbVal, error) and String() string
+ once an of type PbVal is created with an underlying buffer buf upon calling Parse() on 
+ it another object that satisfies the PbVal interface is returned. this we way we can 
+ recurse in the container formats while populating the internal protocol buffer messages.
+
+[commands]
+ gobgpdump: dumps entries in an MRT update file with BGP4MP entries
+
+[usage]
+  run make. the gobgpdump binary should be under cmd/. Running it on an MRT file produces 
+  bgpdump like output. 
+  make test will fetch a sample file from the http://bgpmon.io archive , store it under /tmp
+  and run the gobgpdump command on it.
+  (for more info on the archive see: http://bgpmon.io/archive/help)
+
+[TODO]
+ - more protocols
+ - MRT RIB dumps
+ - gobgpdump tool support for more outputs (json).
+ - gobgpdump tool to dump in len prefixed protobuf files
+ - godoc
