@@ -51,28 +51,29 @@ func NewBgp4mpHdrBuf(buf []byte, as4 bool) *bgp4mpHdrBuf {
 }
 
 func (m *mrtHhdrBuf) String() string {
-	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(*m.dest.Timestamp), 0), *m.dest.Type, *m.dest.Subtype, *m.dest.Len)
+	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0), m.dest.Type, m.dest.Subtype, m.dest.Len)
 }
 
 func (m *bgp4mpHdrBuf) String() string {
 	formatstr := "peer_as:%d local_as:%d interface_index:%d address_family:%d peer_ip:%s local_ip:%s"
 	if m.isv6 {
-		return fmt.Sprintf(formatstr, *m.dest.PeerAs, *m.dest.LocalAs, *m.dest.InterfaceIndex, *m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv6), net.IP(m.dest.LocalIp.Ipv6))
+		return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv6), net.IP(m.dest.LocalIp.Ipv6))
 	}
-	return fmt.Sprintf(formatstr, *m.dest.PeerAs, *m.dest.LocalAs, *m.dest.InterfaceIndex, *m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv4).To4(), net.IP(m.dest.LocalIp.Ipv4).To4())
+	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv4).To4(), net.IP(m.dest.LocalIp.Ipv4).To4())
 }
 
 func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	if len(mhb.buf) < MRT_HEADER_LEN {
 		return nil, errors.New("Not enough bytes in data slice to decode MRT header")
 	}
-	mhb.dest.Timestamp = proto.Uint32(binary.BigEndian.Uint32(mhb.buf[:4]))
+	//mhb.dest.Timestamp = *proto.Uint32(binary.BigEndian.Uint32(mhb.buf[:4]))
+	mhb.dest.Timestamp = binary.BigEndian.Uint32(mhb.buf[:4])
 	u16type := binary.BigEndian.Uint16(mhb.buf[4:6])
-	mhb.dest.Type = proto.Uint32(uint32(u16type))
+	mhb.dest.Type = *proto.Uint32(uint32(u16type))
 	u16subtype := binary.BigEndian.Uint16(mhb.buf[6:8])
-	mhb.dest.Subtype = proto.Uint32(uint32(u16subtype))
-	mhb.dest.Len = proto.Uint32(binary.BigEndian.Uint32(mhb.buf[8:12]))
-	if len(mhb.buf[MRT_HEADER_LEN:]) < int(*mhb.dest.Len) {
+	mhb.dest.Subtype = *proto.Uint32(uint32(u16subtype))
+	mhb.dest.Len = *proto.Uint32(binary.BigEndian.Uint32(mhb.buf[8:12]))
+	if len(mhb.buf[MRT_HEADER_LEN:]) < int(mhb.dest.Len) {
 		return nil, errors.New("Not enough bytes in data slice for underlying message")
 	}
 	if u16type == uint16(BGP4MP) || u16type == uint16(BGP4MP_ET) {
@@ -92,17 +93,17 @@ func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
 		return nil, errors.New("Not enough bytes in data slice to decode BGP4MP hdr")
 	}
 	if b4hdrb.isAS4 {
-		b4hdrb.dest.PeerAs = proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[:4]))
-		b4hdrb.dest.LocalAs = proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[4:8]))
+		b4hdrb.dest.PeerAs = *proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[:4]))
+		b4hdrb.dest.LocalAs = *proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[4:8]))
 		b4hdrb.buf = b4hdrb.buf[8:]
 	} else {
-		b4hdrb.dest.PeerAs = proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
-		b4hdrb.dest.LocalAs = proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4])))
+		b4hdrb.dest.PeerAs = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
+		b4hdrb.dest.LocalAs = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4])))
 		b4hdrb.buf = b4hdrb.buf[4:]
 	}
-	b4hdrb.dest.InterfaceIndex = proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
+	b4hdrb.dest.InterfaceIndex = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
 	u16af := binary.BigEndian.Uint16(b4hdrb.buf[2:4])
-	b4hdrb.dest.AddressFamily = proto.Uint32(uint32(u16af))
+	b4hdrb.dest.AddressFamily = *proto.Uint32(uint32(u16af))
 	pip, lip := new(pb.IPAddressWrapper), new(pb.IPAddressWrapper)
 	switch u16af {
 	case bgp.AFI_IP:
@@ -137,7 +138,7 @@ func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if errh != nil {
 		return 0, nil, errh
 	}
-	totlen := int(*hdr.dest.Len + MRT_HEADER_LEN)
+	totlen := int(hdr.dest.Len + MRT_HEADER_LEN)
 	if len(data) < totlen { //need to read more
 		return 0, nil, nil
 	}

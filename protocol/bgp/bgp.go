@@ -59,9 +59,9 @@ func (b *bgpUpdateBuf) String() string {
 			ret += fmt.Sprintf(" Withdrawn Routes (%d):\n", len(b.dest.WithdrawnRoutes.Prefixes))
 			for _, wr := range b.dest.WithdrawnRoutes.Prefixes {
 				if b.isv6 {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv6), *wr.Mask)
+					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv6), wr.Mask)
 				} else {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv4).To4(), *wr.Mask)
+					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv4).To4(), wr.Mask)
 				}
 			}
 		}
@@ -71,9 +71,9 @@ func (b *bgpUpdateBuf) String() string {
 			ret += fmt.Sprintf(" Advertized Routes (%d):\n", len(b.dest.AdvertizedRoutes.Prefixes))
 			for _, ar := range b.dest.AdvertizedRoutes.Prefixes {
 				if b.isv6 {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv6), *ar.Mask)
+					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv6), ar.Mask)
 				} else {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv4).To4(), *ar.Mask)
+					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv4).To4(), ar.Mask)
 				}
 			}
 		}
@@ -96,15 +96,15 @@ func (b *bgpUpdateBuf) String() string {
 				ret += fmt.Sprintf("%s", net.IP(b.dest.Attrs.NextHop.Ipv4).To4())
 			}
 		}
-		if b.dest.Attrs.AtomicAggregate != nil && *b.dest.Attrs.AtomicAggregate {
+		if b.dest.Attrs.AtomicAggregate {
 			ret += "\nAtomic-Aggregate: true\n"
 		}
 		if b.dest.Attrs.Aggregator != nil {
 			ret += "\nAggregator:"
 			if b.isv6 {
-				ret += fmt.Sprintf("AS:%d IP:%s", *b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv6))
+				ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv6))
 			} else {
-				ret += fmt.Sprintf("AS:%d IP:%s", *b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv4).To4())
+				ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv4).To4())
 			}
 		}
 		if b.dest.Attrs.Communities != nil {
@@ -127,17 +127,17 @@ func (b *bgpHeaderBuf) Parse() (protoparse.PbVal, error) {
 		return nil, errors.New("not enough bytes to decode BGP header")
 	}
 	b.dest.Marker = b.buf[:16]
-	b.dest.Length = proto.Uint32(uint32(binary.BigEndian.Uint16(b.buf[16:18])))
-	b.dest.Type = proto.Uint32(uint32(b.buf[18]))
+	b.dest.Length = *proto.Uint32(uint32(binary.BigEndian.Uint16(b.buf[16:18])))
+	b.dest.Type = *proto.Uint32(uint32(b.buf[18]))
 	return NewBgpUpdateBuf(b.buf[19:], b.isv6, b.isAS4), nil
 }
 
-func itob(a uint8) *bool {
+func itob(a uint8) bool {
 	ret := false
 	if a == 1 {
 		ret = true
 	}
-	return &ret
+	return ret
 }
 
 func readPrefix(buf []byte, v6 bool) []*pb.PrefixWrapper {
@@ -176,7 +176,7 @@ func readPrefix(buf []byte, v6 bool) []*pb.PrefixWrapper {
 			//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
 		}
 		mask := proto.Uint32(uint32(bitlen))
-		route.Mask = mask
+		route.Mask = *mask
 		route.Prefix = addr
 		wpslice = append(wpslice, route)
 		buf = buf[bytelen:] //advance the buffer to the next withdrawn route
@@ -206,7 +206,7 @@ readattr:
 	attrs.ExtendedBit = itob(flagbyte & (1 << 3))
 	typebyte := uint8(buf[1])
 	//fmt.Printf(" TYPE %d ", typebyte)
-	if *attrs.ExtendedBit == true {
+	if attrs.ExtendedBit == true {
 		if len(buf) < 4 {
 			return nil, errors.New("not enough bytes for extended attribute")
 		}
@@ -246,8 +246,8 @@ readattr:
 		if attrlen != 1 {
 			return nil, errors.New("origin attribute should be 1 byte long")
 		}
-		attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
-		*attrs.Origin = pb.BGPUpdate_Attributes_Origin(buf[0])
+		//attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
+		attrs.Origin = pb.BGPUpdate_Attributes_Origin(buf[0])
 		//fmt.Printf(" origin: %s ", attrs.Origin)
 	case 2:
 		//fmt.Printf(" [as-path] ")
@@ -326,43 +326,43 @@ readattr:
 			return nil, fmt.Errorf("multi-exit discriminator should be 4 bytes")
 		}
 		me := binary.BigEndian.Uint32(buf[:attrlen])
-		attrs.MultiExit = &me
+		attrs.MultiExit = me
 	case 5:
 		//fmt.Printf(" [local-pref] ")
 		if attrlen != 4 {
 			return nil, fmt.Errorf("local-pref should be 4 bytes")
 		}
 		lp := binary.BigEndian.Uint32(buf[:attrlen])
-		attrs.LocalPref = &lp
+		attrs.LocalPref = lp
 	case 6:
 		//fmt.Printf(" [atomic-aggregate] ")
 		aa := true
-		attrs.AtomicAggregate = &aa
+		attrs.AtomicAggregate = aa
 	case 7:
 		//fmt.Printf(" [aggregator] ")
 		addr := new(pb.IPAddressWrapper)
 		aggr := new(pb.BGPUpdate_Aggregator)
 		switch {
 		case attrlen == 6: // 2 byte AS and 4 byte IP
-			as := proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
+			as := *proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
 			aggr.As = as
 			ipbuf := make([]byte, 4)
 			copy(ipbuf, buf[2:6])
 			addr.Ipv4 = ipbuf
 		case attrlen == 8: // 4 byte AS and 4 byte IP
-			as := proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
+			as := *proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
 			aggr.As = as
 			ipbuf := make([]byte, 4)
 			copy(ipbuf, buf[4:8])
 			addr.Ipv4 = ipbuf
 		case attrlen == 18: // 2byte AS and 16 byte IP
-			as := proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
+			as := *proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
 			aggr.As = as
 			ipbuf := make([]byte, 16)
 			copy(ipbuf, buf[2:18])
 			addr.Ipv6 = ipbuf
 		case attrlen == 20: // 2byte AS and 16 byte IP
-			as := proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
+			as := *proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
 			aggr.As = as
 			ipbuf := make([]byte, 16)
 			copy(ipbuf, buf[4:20])
