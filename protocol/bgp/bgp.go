@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/CSUNetSec/protoparse"
 	pb "github.com/CSUNetSec/protoparse/pb"
-	"github.com/golang/protobuf/proto"
 	"net"
 )
 
@@ -127,8 +126,8 @@ func (b *bgpHeaderBuf) Parse() (protoparse.PbVal, error) {
 		return nil, errors.New("not enough bytes to decode BGP header")
 	}
 	b.dest.Marker = b.buf[:16]
-	b.dest.Length = *proto.Uint32(uint32(binary.BigEndian.Uint16(b.buf[16:18])))
-	b.dest.Type = *proto.Uint32(uint32(b.buf[18]))
+	b.dest.Length = uint32(binary.BigEndian.Uint16(b.buf[16:18]))
+	b.dest.Type = uint32(b.buf[18])
 	return NewBgpUpdateBuf(b.buf[19:], b.isv6, b.isAS4), nil
 }
 
@@ -175,8 +174,7 @@ func readPrefix(buf []byte, v6 bool) []*pb.PrefixWrapper {
 			addr.Ipv4 = ipbuf
 			//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
 		}
-		mask := proto.Uint32(uint32(bitlen))
-		route.Mask = *mask
+		route.Mask = uint32(bitlen)
 		route.Prefix = addr
 		wpslice = append(wpslice, route)
 		buf = buf[bytelen:] //advance the buffer to the next withdrawn route
@@ -344,25 +342,25 @@ readattr:
 		aggr := new(pb.BGPUpdate_Aggregator)
 		switch {
 		case attrlen == 6: // 2 byte AS and 4 byte IP
-			as := *proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
+			as := uint32(binary.BigEndian.Uint16(buf[:2]))
 			aggr.As = as
 			ipbuf := make([]byte, 4)
 			copy(ipbuf, buf[2:6])
 			addr.Ipv4 = ipbuf
 		case attrlen == 8: // 4 byte AS and 4 byte IP
-			as := *proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
+			as := binary.BigEndian.Uint32(buf[:4])
 			aggr.As = as
 			ipbuf := make([]byte, 4)
 			copy(ipbuf, buf[4:8])
 			addr.Ipv4 = ipbuf
 		case attrlen == 18: // 2byte AS and 16 byte IP
-			as := *proto.Uint32(uint32(binary.BigEndian.Uint16(buf[:2])))
+			as := uint32(binary.BigEndian.Uint16(buf[:2]))
 			aggr.As = as
 			ipbuf := make([]byte, 16)
 			copy(ipbuf, buf[2:18])
 			addr.Ipv6 = ipbuf
 		case attrlen == 20: // 2byte AS and 16 byte IP
-			as := *proto.Uint32(binary.BigEndian.Uint32(buf[:4]))
+			as := binary.BigEndian.Uint32(buf[:4])
 			aggr.As = as
 			ipbuf := make([]byte, 16)
 			copy(ipbuf, buf[4:20])

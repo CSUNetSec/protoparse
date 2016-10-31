@@ -7,7 +7,6 @@ import (
 	"github.com/CSUNetSec/protoparse"
 	pb "github.com/CSUNetSec/protoparse/pb"
 	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
-	"github.com/golang/protobuf/proto"
 	"net"
 	"time"
 )
@@ -66,13 +65,12 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	if len(mhb.buf) < MRT_HEADER_LEN {
 		return nil, errors.New("Not enough bytes in data slice to decode MRT header")
 	}
-	//mhb.dest.Timestamp = *proto.Uint32(binary.BigEndian.Uint32(mhb.buf[:4]))
 	mhb.dest.Timestamp = binary.BigEndian.Uint32(mhb.buf[:4])
 	u16type := binary.BigEndian.Uint16(mhb.buf[4:6])
-	mhb.dest.Type = *proto.Uint32(uint32(u16type))
+	mhb.dest.Type = uint32(u16type)
 	u16subtype := binary.BigEndian.Uint16(mhb.buf[6:8])
-	mhb.dest.Subtype = *proto.Uint32(uint32(u16subtype))
-	mhb.dest.Len = *proto.Uint32(binary.BigEndian.Uint32(mhb.buf[8:12]))
+	mhb.dest.Subtype = uint32(u16subtype)
+	mhb.dest.Len = binary.BigEndian.Uint32(mhb.buf[8:12])
 	if len(mhb.buf[MRT_HEADER_LEN:]) < int(mhb.dest.Len) {
 		return nil, errors.New("Not enough bytes in data slice for underlying message")
 	}
@@ -93,17 +91,17 @@ func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
 		return nil, errors.New("Not enough bytes in data slice to decode BGP4MP hdr")
 	}
 	if b4hdrb.isAS4 {
-		b4hdrb.dest.PeerAs = *proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[:4]))
-		b4hdrb.dest.LocalAs = *proto.Uint32(binary.BigEndian.Uint32(b4hdrb.buf[4:8]))
+		b4hdrb.dest.PeerAs = binary.BigEndian.Uint32(b4hdrb.buf[:4])
+		b4hdrb.dest.LocalAs = binary.BigEndian.Uint32(b4hdrb.buf[4:8])
 		b4hdrb.buf = b4hdrb.buf[8:]
 	} else {
-		b4hdrb.dest.PeerAs = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
-		b4hdrb.dest.LocalAs = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4])))
+		b4hdrb.dest.PeerAs = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
+		b4hdrb.dest.LocalAs = uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4]))
 		b4hdrb.buf = b4hdrb.buf[4:]
 	}
-	b4hdrb.dest.InterfaceIndex = *proto.Uint32(uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2])))
+	b4hdrb.dest.InterfaceIndex = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
 	u16af := binary.BigEndian.Uint16(b4hdrb.buf[2:4])
-	b4hdrb.dest.AddressFamily = *proto.Uint32(uint32(u16af))
+	b4hdrb.dest.AddressFamily = uint32(u16af)
 	pip, lip := new(pb.IPAddressWrapper), new(pb.IPAddressWrapper)
 	switch u16af {
 	case bgp.AFI_IP:
