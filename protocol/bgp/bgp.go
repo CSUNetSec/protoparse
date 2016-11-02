@@ -5,8 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
+	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
-	pb "github.com/CSUNetSec/protoparse/pb"
 	"net"
 )
 
@@ -16,14 +17,14 @@ const (
 )
 
 type bgpHeaderBuf struct {
-	dest  *pb.BGPHeader
+	dest  *pbbgp.BGPHeader
 	buf   []byte
 	isv6  bool
 	isAS4 bool
 }
 
 type bgpUpdateBuf struct {
-	dest  *pb.BGPUpdate
+	dest  *pbbgp.BGPUpdate
 	buf   []byte
 	isv6  bool
 	isAS4 bool
@@ -31,7 +32,7 @@ type bgpUpdateBuf struct {
 
 func NewBgpHeaderBuf(buf []byte, v6, as4 bool) *bgpHeaderBuf {
 	return &bgpHeaderBuf{
-		dest:  new(pb.BGPHeader),
+		dest:  new(pbbgp.BGPHeader),
 		buf:   buf,
 		isv6:  v6,
 		isAS4: as4,
@@ -41,7 +42,7 @@ func NewBgpHeaderBuf(buf []byte, v6, as4 bool) *bgpHeaderBuf {
 func NewBgpUpdateBuf(buf []byte, v6, as4 bool) *bgpUpdateBuf {
 	return &bgpUpdateBuf{
 		buf:   buf,
-		dest:  new(pb.BGPUpdate),
+		dest:  new(pbbgp.BGPUpdate),
 		isv6:  v6,
 		isAS4: as4,
 	}
@@ -139,13 +140,13 @@ func itob(a uint8) bool {
 	return ret
 }
 
-func readPrefix(buf []byte, v6 bool) []*pb.PrefixWrapper {
-	wpslice := []*pb.PrefixWrapper{}
+func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
+	wpslice := []*pbcom.PrefixWrapper{}
 
 	//fmt.Printf("blen:%d buf:%+v\n", len(buf), buf)
 	for len(buf) > 1 { //can read the bytelen
-		route := new(pb.PrefixWrapper)
-		addr := new(pb.IPAddressWrapper)
+		route := new(pbcom.PrefixWrapper)
+		addr := new(pbcom.IPAddressWrapper)
 		//read pref mask in bits
 		bitlen := uint8(buf[0])
 		buf = buf[1:]
@@ -182,8 +183,8 @@ func readPrefix(buf []byte, v6 bool) []*pb.PrefixWrapper {
 	return wpslice
 }
 
-func readAttrs(buf []byte, as4, v6 bool) (*pb.BGPUpdate_Attributes, error) {
-	attrs := new(pb.BGPUpdate_Attributes)
+func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error) {
+	attrs := new(pbbgp.BGPUpdate_Attributes)
 	var (
 		attrlen uint16
 		tempas  uint32
@@ -245,13 +246,13 @@ readattr:
 			return nil, errors.New("origin attribute should be 1 byte long")
 		}
 		//attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
-		attrs.Origin = pb.BGPUpdate_Attributes_Origin(buf[0])
+		attrs.Origin = pbbgp.BGPUpdate_Attributes_Origin(buf[0])
 		//fmt.Printf(" origin: %s ", attrs.Origin)
 	case 2:
 		//fmt.Printf(" [as-path] ")
 		//reading  path segment type
 	readseg:
-		seg := new(pb.BGPUpdate_ASPathSegment)
+		seg := new(pbbgp.BGPUpdate_ASPathSegment)
 		if len(buf) < 2 {
 			return nil, errors.New("not enough bytes for path segment type and path length")
 		}
@@ -299,7 +300,7 @@ readattr:
 		}
 	case 3:
 		//fmt.Printf(" [next-hop] ", attrlen, v6)
-		addr := new(pb.IPAddressWrapper)
+		addr := new(pbcom.IPAddressWrapper)
 		switch {
 		case v6 == true && attrlen == 16:
 			ipbuf := make([]byte, 16)
@@ -338,8 +339,8 @@ readattr:
 		attrs.AtomicAggregate = aa
 	case 7:
 		//fmt.Printf(" [aggregator] ")
-		addr := new(pb.IPAddressWrapper)
-		aggr := new(pb.BGPUpdate_Aggregator)
+		addr := new(pbcom.IPAddressWrapper)
+		aggr := new(pbbgp.BGPUpdate_Aggregator)
 		switch {
 		case attrlen == 6: // 2 byte AS and 4 byte IP
 			as := uint32(binary.BigEndian.Uint16(buf[:2]))
@@ -374,9 +375,9 @@ readattr:
 		//fmt.Printf(" [community] ")
 		//if communities is not set yet
 		if attrs.Communities == nil {
-			attrs.Communities = new(pb.BGPUpdate_Communities)
+			attrs.Communities = new(pbbgp.BGPUpdate_Communities)
 		}
-		com := new(pb.BGPUpdate_Community)
+		com := new(pbbgp.BGPUpdate_Community)
 		combuf := make([]byte, attrlen)
 		copy(combuf, buf[:attrlen])
 		com.Community = combuf
@@ -385,9 +386,9 @@ readattr:
 		//fmt.Printf(" [extended community] ")
 		//if communities is not set yet
 		if attrs.Communities == nil {
-			attrs.Communities = new(pb.BGPUpdate_Communities)
+			attrs.Communities = new(pbbgp.BGPUpdate_Communities)
 		}
-		com := new(pb.BGPUpdate_Community)
+		com := new(pbbgp.BGPUpdate_Community)
 		combuf := make([]byte, attrlen)
 		copy(combuf, buf[:attrlen])
 		com.ExtendedCommunity = combuf
@@ -396,7 +397,7 @@ readattr:
 		//fmt.Printf(" [as4-path] ")
 		//reading  path segment type
 	readseg4:
-		seg := new(pb.BGPUpdate_ASPathSegment)
+		seg := new(pbbgp.BGPUpdate_ASPathSegment)
 		if len(buf) < 2 {
 			return nil, errors.New("not enough bytes for path segment type and path length")
 		}
@@ -462,7 +463,7 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		wpslice := readPrefix(b.buf[:wlen], b.isv6)
 		b.buf = b.buf[wlen:]
 
-		b.dest.WithdrawnRoutes = new(pb.BGPUpdate_WithdrawnRoutes)
+		b.dest.WithdrawnRoutes = new(pbbgp.BGPUpdate_WithdrawnRoutes)
 		b.dest.WithdrawnRoutes.Prefixes = wpslice
 	}
 	//read attr len
@@ -494,9 +495,13 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		//fmt.Println("nrlilen:", nlrilen)
 		nlrislice := readPrefix(b.buf[:nlrilen], b.isv6)
 		b.buf = b.buf[nlrilen:]
-		b.dest.AdvertizedRoutes = new(pb.BGPUpdate_AdvertizedRoutes)
+		b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
 		b.dest.AdvertizedRoutes.Prefixes = nlrislice
 	}
 
 	return nil, nil
+}
+
+func (b *bgpUpdateBuf) GetUpdate() *pbbgp.BGPUpdate {
+	return b.dest
 }

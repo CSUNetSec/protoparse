@@ -4,8 +4,9 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
+	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
-	pb "github.com/CSUNetSec/protoparse/pb"
 	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
 	"net"
 	"time"
@@ -22,12 +23,12 @@ const (
 )
 
 type mrtHhdrBuf struct {
-	dest *pb.MrtHeader
+	dest *pbbgp.MrtHeader
 	buf  []byte
 }
 
 type bgp4mpHdrBuf struct {
-	dest  *pb.BGP4MPHeader
+	dest  *pbbgp.BGP4MPHeader
 	buf   []byte
 	isv6  bool
 	isAS4 bool
@@ -35,14 +36,14 @@ type bgp4mpHdrBuf struct {
 
 func NewMrtHdrBuf(buf []byte) *mrtHhdrBuf {
 	return &mrtHhdrBuf{
-		dest: new(pb.MrtHeader),
+		dest: new(pbbgp.MrtHeader),
 		buf:  buf,
 	}
 }
 
 func NewBgp4mpHdrBuf(buf []byte, as4 bool) *bgp4mpHdrBuf {
 	return &bgp4mpHdrBuf{
-		dest:  new(pb.BGP4MPHeader),
+		dest:  new(pbbgp.BGP4MPHeader),
 		buf:   buf,
 		isAS4: as4,
 		isv6:  false,
@@ -102,7 +103,7 @@ func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
 	b4hdrb.dest.InterfaceIndex = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
 	u16af := binary.BigEndian.Uint16(b4hdrb.buf[2:4])
 	b4hdrb.dest.AddressFamily = uint32(u16af)
-	pip, lip := new(pb.IPAddressWrapper), new(pb.IPAddressWrapper)
+	pip, lip := new(pbcom.IPAddressWrapper), new(pbcom.IPAddressWrapper)
 	switch u16af {
 	case bgp.AFI_IP:
 		pip.Ipv4 = b4hdrb.buf[4:8]
@@ -141,4 +142,12 @@ func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		return 0, nil, nil
 	}
 	return totlen, data[0:totlen], nil
+}
+
+func (m *mrtHhdrBuf) GetHeader() *pbbgp.MrtHeader {
+	return m.dest
+}
+
+func (m *bgp4mpHdrBuf) GetHeader() *pbbgp.BGP4MPHeader {
+	return m.dest
 }
