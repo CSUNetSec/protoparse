@@ -382,6 +382,10 @@ readattr:
 		copy(combuf, buf[:attrlen])
 		com.Community = combuf
 		attrs.Communities.Communities = append(attrs.Communities.Communities, com)
+	case 14:
+		//fmt.Printf(" [MP_REACH_NLRI] ")
+	case 15:
+		//fmt.Printf(" [MP_UNREACH_NLRI] ")
 	case 16:
 		//fmt.Printf(" [extended community] ")
 		//if communities is not set yet
