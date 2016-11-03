@@ -73,7 +73,7 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	mhb.dest.Subtype = uint32(u16subtype)
 	mhb.dest.Len = binary.BigEndian.Uint32(mhb.buf[8:12])
 	if len(mhb.buf[MRT_HEADER_LEN:]) < int(mhb.dest.Len) {
-		return nil, errors.New("Not enough bytes in data slice for underlying message")
+		return nil, fmt.Errorf("Not enough bytes in data slice for underlying message.len of buf:%d len parsed:%d", len(mhb.buf[MRT_HEADER_LEN:]), mhb.dest.Len)
 	}
 	if u16type == uint16(BGP4MP) || u16type == uint16(BGP4MP_ET) {
 		if u16subtype == MESSAGE_AS4 || u16subtype == MESSAGE_AS4_LOCAL {
@@ -128,6 +128,10 @@ func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
 	}
+	if atEOF { //if at EOF return the data
+		return len(data), data, nil
+	}
+
 	if cap(data) < MRT_HEADER_LEN { // read more
 		return 0, nil, nil
 	}
@@ -135,7 +139,8 @@ func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	hdr := NewMrtHdrBuf(data)
 	_, errh := hdr.Parse()
 	if errh != nil {
-		return 0, nil, errh
+		//XXX: maybe hold a retry counter in another goroutine??
+		return 0, nil, nil // try to read more maybe the parse error will go away.
 	}
 	totlen := int(hdr.dest.Len + MRT_HEADER_LEN)
 	if len(data) < totlen { //need to read more

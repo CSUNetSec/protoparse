@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"compress/bzip2"
 	"fmt"
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -24,6 +26,21 @@ func errx(e error, fds ...io.Closer) {
 	os.Exit(-1)
 }
 
+func getScanner(file *os.File) (scanner *bufio.Scanner) {
+	fname := file.Name()
+	fext := filepath.Ext(fname)
+	if fext == ".bz2" {
+		bzreader := bzip2.NewReader(file)
+		scanner = bufio.NewScanner(bzreader)
+	} else {
+		scanner = bufio.NewScanner(file)
+	}
+	scanner.Split(mrt.SplitMrt)
+	scanbuffer := make([]byte, 2<<24) //an internal buffer for the large tokens (1M)
+	scanner.Buffer(scanbuffer, cap(scanbuffer))
+	return
+}
+
 func main() {
 	if len(os.Args) != 2 {
 		log.Println("mrt file not provided")
@@ -32,10 +49,7 @@ func main() {
 	mrtfd, err := os.Open(os.Args[1])
 	errx(err)
 	defer mrtfd.Close()
-	mrtScanner := bufio.NewScanner(mrtfd)
-	scanbuffer := make([]byte, 2<<20) //an internal buffer for the large tokens (1M)
-	mrtScanner.Buffer(scanbuffer, cap(scanbuffer))
-	mrtScanner.Split(mrt.SplitMrt)
+	mrtScanner := getScanner(mrtfd)
 	numentries := 0
 	totsz := 0
 	t1 := time.Now()
