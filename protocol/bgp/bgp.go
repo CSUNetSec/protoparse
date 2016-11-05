@@ -203,7 +203,7 @@ readattr:
 	attrs.TransitiveBit = itob(flagbyte & (1 << 1))
 	attrs.PartialBit = itob(flagbyte & (1 << 2))
 	attrs.ExtendedBit = itob(flagbyte & (1 << 3))
-	typebyte := uint8(buf[1])
+	typebyte := pbbgp.BGPUpdate_Attributes_Type(uint8(buf[1]))
 	//fmt.Printf(" TYPE %d ", typebyte)
 	if attrs.ExtendedBit == true {
 		if len(buf) < 4 {
@@ -240,7 +240,8 @@ readattr:
 	//fmt.Printf(" [len:%d]  [val:%v] \n", attrlen, buf[:attrlen])
 	totskip := 0
 	switch typebyte {
-	case 1:
+	case pbbgp.BGPUpdate_Attributes_ORIGIN:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_ORIGIN)
 		//fmt.Printf(" [origin] ")
 		if attrlen != 1 {
 			return nil, errors.New("origin attribute should be 1 byte long")
@@ -248,7 +249,8 @@ readattr:
 		//attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
 		attrs.Origin = pbbgp.BGPUpdate_Attributes_Origin(buf[0])
 		//fmt.Printf(" origin: %s ", attrs.Origin)
-	case 2:
+	case pbbgp.BGPUpdate_Attributes_AS_PATH:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS_PATH)
 		//fmt.Printf(" [as-path] ")
 		//reading  path segment type
 	readseg:
@@ -298,7 +300,8 @@ readattr:
 			//fmt.Printf("jumping to readseg again until now read:%d attrlen:%d", totskip, attrlen)
 			goto readseg
 		}
-	case 3:
+	case pbbgp.BGPUpdate_Attributes_NEXT_HOP:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_NEXT_HOP)
 		//fmt.Printf(" [next-hop] ", attrlen, v6)
 		addr := new(pbcom.IPAddressWrapper)
 		switch {
@@ -319,25 +322,29 @@ readattr:
 		//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
 		attrs.NextHop = addr
 
-	case 4:
+	case pbbgp.BGPUpdate_Attributes_MULTI_EXIT:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MULTI_EXIT)
 		//fmt.Printf(" [multi-exit] ")
 		if attrlen != 4 {
 			return nil, fmt.Errorf("multi-exit discriminator should be 4 bytes")
 		}
 		me := binary.BigEndian.Uint32(buf[:attrlen])
 		attrs.MultiExit = me
-	case 5:
+	case pbbgp.BGPUpdate_Attributes_LOCAL_PREF:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_LOCAL_PREF)
 		//fmt.Printf(" [local-pref] ")
 		if attrlen != 4 {
 			return nil, fmt.Errorf("local-pref should be 4 bytes")
 		}
 		lp := binary.BigEndian.Uint32(buf[:attrlen])
 		attrs.LocalPref = lp
-	case 6:
+	case pbbgp.BGPUpdate_Attributes_ATOMIC_AGGREGATE:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_ATOMIC_AGGREGATE)
 		//fmt.Printf(" [atomic-aggregate] ")
 		aa := true
 		attrs.AtomicAggregate = aa
-	case 7:
+	case pbbgp.BGPUpdate_Attributes_AGGREGATOR:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AGGREGATOR)
 		//fmt.Printf(" [aggregator] ")
 		addr := new(pbcom.IPAddressWrapper)
 		aggr := new(pbbgp.BGPUpdate_Aggregator)
@@ -371,7 +378,8 @@ readattr:
 		}
 		aggr.Ip = addr
 		attrs.Aggregator = aggr
-	case 8:
+	case pbbgp.BGPUpdate_Attributes_COMMUNITY:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_COMMUNITY)
 		//fmt.Printf(" [community] ")
 		//if communities is not set yet
 		if attrs.Communities == nil {
@@ -382,11 +390,14 @@ readattr:
 		copy(combuf, buf[:attrlen])
 		com.Community = combuf
 		attrs.Communities.Communities = append(attrs.Communities.Communities, com)
-	case 14:
+	case pbbgp.BGPUpdate_Attributes_MP_REACH_NLRI:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MP_REACH_NLRI)
 		//fmt.Printf(" [MP_REACH_NLRI] ")
-	case 15:
+	case pbbgp.BGPUpdate_Attributes_MP_UNREACH_NLRI:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MP_UNREACH_NLRI)
 		//fmt.Printf(" [MP_UNREACH_NLRI] ")
-	case 16:
+	case pbbgp.BGPUpdate_Attributes_EXTENDED_COMMUNITY:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_EXTENDED_COMMUNITY)
 		//fmt.Printf(" [extended community] ")
 		//if communities is not set yet
 		if attrs.Communities == nil {
@@ -397,7 +408,8 @@ readattr:
 		copy(combuf, buf[:attrlen])
 		com.ExtendedCommunity = combuf
 		attrs.Communities.Communities = append(attrs.Communities.Communities, com)
-	case 17:
+	case pbbgp.BGPUpdate_Attributes_AS4_PATH:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_PATH)
 		//fmt.Printf(" [as4-path] ")
 		//reading  path segment type
 	readseg4:
@@ -435,7 +447,8 @@ readattr:
 		if totskip < int(attrlen) { // more as path segments?
 			goto readseg4
 		}
-	case 18:
+	case pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR:
+		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR)
 		//fmt.Printf(" [as4-aggregator] ")
 	default:
 		return attrs, fmt.Errorf(" [unknown type %d] ", typebyte)
