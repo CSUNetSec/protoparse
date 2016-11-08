@@ -244,7 +244,8 @@ readattr:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_ORIGIN)
 		//fmt.Printf(" [origin] ")
 		if attrlen != 1 {
-			return nil, errors.New("origin attribute should be 1 byte long")
+			//XXX: when i have MP_REACH and unreach this is 2 bytes long. why?
+			return nil, fmt.Errorf("origin attribute should be 1 byte long and it is:%d", attrlen)
 		}
 		//attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
 		attrs.Origin = pbbgp.BGPUpdate_Attributes_Origin(buf[0])
@@ -496,18 +497,16 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		//XXX:parse them
 		//attrtype := binary.BigEndian.Uint16(b.buf[:2])
 		attrs, errattr := readAttrs(b.buf[:attrlen], b.isAS4, b.isv6)
-		if errattr != nil {
+		if errattr != nil { //XXX log the error?
 			return nil, errattr
 		}
 		//fmt.Printf("attributes: %s\n", attrs)
 		//XXX move over them for now
 		b.buf = b.buf[attrlen:]
 		b.dest.Attrs = attrs
-
 		nlrilen := uplen - 4 - int(attrlen) - wlen
 		if nlrilen == 0 || nlrilen < 0 {
-			fmt.Println("no NLRI present")
-			return nil, errors.New("negative or zero NLRI length")
+			return nil, nil //return. it might only have withdraws
 		}
 		//fmt.Println("nrlilen:", nlrilen)
 		nlrislice := readPrefix(b.buf[:nlrilen], b.isv6)
