@@ -125,25 +125,23 @@ func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
 }
 
 func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
+	dataLen := len(data)
+	if atEOF && dataLen == 0 {
 		return 0, nil, nil
 	}
 	if atEOF { //if at EOF return the data
-		return len(data), data, nil
+		return dataLen, data, nil
 	}
 
 	if cap(data) < MRT_HEADER_LEN { // read more
 		return 0, nil, nil
 	}
-	//this reads the data
-	hdr := NewMrtHdrBuf(data)
-	_, errh := hdr.Parse()
-	if errh != nil {
-		//XXX: maybe hold a retry counter in another goroutine??
-		return 0, nil, nil // try to read more maybe the parse error will go away.
+	if dataLen < MRT_HEADER_LEN {
+		return 0, nil, errors.New("Data slice shorter than MRT header")
 	}
-	totlen := int(hdr.dest.Len + MRT_HEADER_LEN)
-	if len(data) < totlen { //need to read more
+	totlen := int(binary.BigEndian.Uint32(data[8:12])) + MRT_HEADER_LEN
+
+	if dataLen < totlen { //need to read more
 		return 0, nil, nil
 	}
 	return totlen, data[0:totlen], nil
