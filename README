@@ -16,6 +16,8 @@
 
 [commands]
  gobgpdump: dumps entries in an MRT update file with BGP4MP entries
+ recordfilegen: generated go code to store and retrieve generic records based on the type
+                that the user provides as arguments
 
 [usage]
   run make. the gobgpdump binary should be under cmd/. Running it on an MRT file produces 
