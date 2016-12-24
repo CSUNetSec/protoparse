@@ -63,6 +63,9 @@ func New{{.typename}}RecordFile(fname string) *{{.typename}}RecordFile {
 func (recfile *{{.typename}}RecordFile) Put(rec {{.type}}) error {
 	b := {{.fmarshal}}(rec)
 	_, err := recfile.Write(b)
+	if err == nil {
+		recfile.entries++
+	}
 	return err
 }
 
