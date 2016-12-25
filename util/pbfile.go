@@ -11,15 +11,22 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
 var (
-	errNotOpen  = fmt.Errorf("underlying file pointer is nil")
-	errOpen     = fmt.Errorf("underlying file pointer already open")
-	errbufsiz   = fmt.Errorf("buffer sizes can't be negative")
-	errbufsmall = fmt.Errorf("buffer for read is to small to accomodate the record")
+	errNotOpen   = fmt.Errorf("underlying file pointer is nil")
+	errOpen      = fmt.Errorf("underlying file pointer already open")
+	errbufsiz    = fmt.Errorf("buffer sizes can't be negative")
+	errbufsmall  = fmt.Errorf("buffer for read is to small to accomodate the record")
+	errnofoot    = fmt.Errorf("No header information")
+	errnoentries = fmt.Errorf("No entries recorded in file")
 )
+
+//this is the magin number that should be in
+//the end of the file encoded in BigEndian
+var magicbytes = uint32(118864)
 
 const (
 	RecordFile_Flat = iota
@@ -29,6 +36,51 @@ const (
 type RecordFiler interface {
 	Version() int
 	Fname() string
+	Footer() (*Footer, error)
+	Entries() (int64, error)
+}
+
+type FlatFootedRecordFile struct {
+	*FlatRecordFile
+	*Footer
+}
+
+func NewFlatFootedRecordFile(fname string) *FlatFootedRecordFile {
+	abspath, _ := filepath.Abs(fname)
+	return &FlatFootedRecordFile{
+		NewFlatRecordFile(fname),
+		&Footer{filedir: abspath, filename: filepath.Base(fname)},
+	}
+}
+
+//A Footer is appended at the very end of a RecordFile
+//(all types except the FlatRecordFile type )
+//The end of a footer should always be the magicbytes uint32
+//using that an application can easily see if a file is of our type
+//Right before that the previous uint32 is the length of the footer
+//bytes. The footer is a utf-8 encoded column separated string. it should be parsed
+//after it is interpreted as a string. In a sense it is a reversed entry than the
+//length prefixed records it follows. The length should not include the 4 magic bytes.
+//so in the end the size of the file should be the sum of all the entry bytes +
+//footer size + 4. Length in the end of the file should be encoded in BigEndian
+type Footer struct {
+	footlen  uint32 // the length does NOT INCLUDE the magicbytes
+	entries  int64
+	filever  int
+	filedir  string
+	filename string
+}
+
+func (f *Footer) String() string {
+	return fmt.Sprintf("%d:%d:%s:%s", f.entries, f.filever, f.filedir, f.filename)
+}
+
+func MarshalBytes(a *Footer) []byte {
+	fstr := a.String()
+	buf := bytes.NewBufferString(fstr)
+	binary.Write(buf, binary.BigEndian, uint32(buf.Len())) //write the length of the encoded string
+	binary.Write(buf, binary.BigEndian, magicbytes)        //magic number to finish it off
+	return buf.Bytes()
 }
 
 //A flat record file knows the number of records it has stored,
@@ -59,6 +111,23 @@ func NewFlatRecordFile(fname string) *FlatRecordFile {
 		mux:     &sync.RWMutex{},
 		wpend:   false,
 	}
+}
+
+//Flat record files don't have headers.
+func (p *FlatRecordFile) Footer() (*Footer, error) {
+	return nil, errnofoot
+}
+
+//Entries in a flat record file are not guaranteed
+//to be correct. they are dependant to the position
+//of the writer.
+func (p *FlatRecordFile) Entries() (int64, error) {
+	if p.entries == 0 {
+		return 0, errnoentries
+	}
+	p.mux.Lock()
+	defer p.mux.Unlock()
+	return p.entries, nil
 }
 
 func (p *FlatRecordFile) Version() int {
@@ -147,6 +216,15 @@ func (p *FlatRecordFile) Flush() (err error) {
 //implements io.Closer
 func (p *FlatRecordFile) Close() error {
 	p.Flush() // flush.
+	if p.fp != nil {
+		return p.fp.Close()
+	}
+	return errNotOpen
+}
+
+func (p *FlatFootedRecordFile) Close() error {
+	p.Write(MarshalBytes(p.Footer))
+	p.Flush()
 	if p.fp != nil {
 		return p.fp.Close()
 	}
