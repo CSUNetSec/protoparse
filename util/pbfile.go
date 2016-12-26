@@ -101,7 +101,6 @@ type FlatRecordFile struct {
 	Scanner *bufio.Scanner
 	entries int64
 	sz      int64
-	wpend   bool
 }
 
 func NewFlatRecordFile(fname string) *FlatRecordFile {
@@ -113,7 +112,6 @@ func NewFlatRecordFile(fname string) *FlatRecordFile {
 		Scanner: nil,
 		entries: 0,
 		sz:      0,
-		wpend:   false,
 	}
 }
 
@@ -211,7 +209,6 @@ func (p *FlatRecordFile) Write(b []byte) (n int, err error) {
 		return 0, errind
 	}
 	nb, err := p.writer.Write(b)
-	p.wpend = true //set the pending flag so that readers flush before
 	if err != nil {
 		return 0, err
 	}
@@ -223,18 +220,12 @@ func (p *FlatRecordFile) Read(b []byte) (int, error) {
 	if p.fp == nil {
 		return 0, errNotOpen
 	}
-	if p.wpend { //if there are writes pending flush the writer
-		p.Flush()
-	}
 	return p.fp.Read(b)
 }
 
 func (p *FlatRecordFile) Flush() (err error) {
 	if p.writer != nil {
 		err = p.writer.Flush()
-		if err == nil {
-			p.wpend = false
-		}
 	}
 	return
 }
