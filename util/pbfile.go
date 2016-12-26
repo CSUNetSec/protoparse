@@ -1,8 +1,7 @@
 // The protoparse util package deals with reading and writing
 // protocol buffer encoded records in, for example, files.
-// functions provided here should be thread safe.
-// at any moment there can be only one writer or
-// multiple readers.
+// functions provided here treat the underlying file as something
+// that will be opened for either Reading or Writing (create or append)
 package util
 
 import (
@@ -10,9 +9,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
-	"sync"
 )
 
 var (
@@ -22,6 +21,7 @@ var (
 	errbufsmall  = fmt.Errorf("buffer for read is to small to accomodate the record")
 	errnofoot    = fmt.Errorf("No header information")
 	errnoentries = fmt.Errorf("No entries recorded in file")
+	errfile      = fmt.Errorf("File given to Open() is not a regular file")
 )
 
 //this is the magin number that should be in
@@ -95,7 +95,6 @@ type FlatRecordFile struct {
 	Scanner *bufio.Scanner
 	entries int64
 	sz      int64
-	mux     *sync.RWMutex
 	wpend   bool
 }
 
@@ -108,7 +107,6 @@ func NewFlatRecordFile(fname string) *FlatRecordFile {
 		Scanner: nil,
 		entries: 0,
 		sz:      0,
-		mux:     &sync.RWMutex{},
 		wpend:   false,
 	}
 }
@@ -125,8 +123,6 @@ func (p *FlatRecordFile) Entries() (int64, error) {
 	if p.entries == 0 {
 		return 0, errnoentries
 	}
-	p.mux.Lock()
-	defer p.mux.Unlock()
 	return p.entries, nil
 }
 
@@ -151,20 +147,29 @@ func (p *FlatRecordFile) OpenWithBufferSizes(readersize, writersize int) (err er
 	if readersize < 0 || writersize < 0 {
 		err = errbufsiz
 	}
-	p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 	if err == nil {
-		if writersize == 0 {
-			p.writer = bufio.NewWriter(p)
-		} else {
-			p.writer = bufio.NewWriterSize(p, writersize)
+		if fi, errstat := os.Stat(p.fname); errstat == nil {
+			if fi.IsDir() {
+				return errfile
+			}
+			log.Printf("File already exists.opening for append")
+			p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND, 0660)
 		}
-		if readersize == 0 {
-			p.reader = bufio.NewReader(p)
-		} else {
-			p.reader = bufio.NewReaderSize(p, readersize)
+		p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+		if err == nil {
+			if writersize == 0 {
+				p.writer = bufio.NewWriter(p)
+			} else {
+				p.writer = bufio.NewWriterSize(p, writersize)
+			}
+			if readersize == 0 {
+				p.reader = bufio.NewReader(p)
+			} else {
+				p.reader = bufio.NewReaderSize(p, readersize)
+			}
+			p.Scanner = bufio.NewScanner(p.reader) //this should call our read
+			p.Scanner.Split(splitRecord)
 		}
-		p.Scanner = bufio.NewScanner(p.reader) //this should call our read
-		p.Scanner.Split(splitRecord)
 	}
 	return
 }
@@ -175,8 +180,6 @@ func (p *FlatRecordFile) Write(b []byte) (n int, err error) {
 	if p.fp == nil {
 		return 0, errNotOpen
 	}
-	p.mux.Lock()
-	defer p.mux.Unlock()
 	rlen := uint32(len(b))
 	errind := binary.Write(p.writer, binary.BigEndian, rlen)
 	if errind != nil {
@@ -198,8 +201,6 @@ func (p *FlatRecordFile) Read(b []byte) (int, error) {
 	if p.wpend { //if there are writes pending flush the writer
 		p.Flush()
 	}
-	p.mux.RLock()
-	defer p.mux.RUnlock()
 	return p.fp.Read(b)
 }
 
