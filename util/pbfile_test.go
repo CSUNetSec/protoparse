@@ -12,8 +12,17 @@ func TestFlatOpenClose(t *testing.T) {
 	if err := pf.Close(); err == nil {
 		t.Error("a close in a non open file should fail")
 	}
-	if err := pf.Open(); err != nil {
+	if err := pf.OpenRead(); err != nil {
 		t.Error("error opening file: ", err)
+	}
+	if err := pf.OpenWrite(); err == nil {
+		t.Error("test should fail since file is already open")
+	}
+	if err := pf.Close(); err != nil {
+		t.Error("error closing file: ", err)
+	}
+	if err := pf.OpenWrite(); err != nil {
+		t.Error("Error opening file: ", err)
 	}
 	if err := pf.Close(); err != nil {
 		t.Error("error closing file: ", err)

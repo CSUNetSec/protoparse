@@ -22,6 +22,7 @@ var (
 	errnofoot    = fmt.Errorf("No header information")
 	errnoentries = fmt.Errorf("No entries recorded in file")
 	errfile      = fmt.Errorf("File given to Open() is not a regular file")
+	errexists    = fmt.Errorf("File exists")
 )
 
 //this is the magin number that should be in
@@ -31,6 +32,11 @@ var magicbytes = uint32(118864)
 const (
 	RecordFile_Flat = iota
 	RecordFile_Indexed
+)
+
+const (
+	OMode_Read = iota
+	OMode_Write
 )
 
 type RecordFiler interface {
@@ -134,13 +140,17 @@ func (p *FlatRecordFile) Fname() string {
 	return p.fname
 }
 
-func (p *FlatRecordFile) Open() error {
-	return p.OpenWithBufferSizes(0, 0)
+func (p *FlatRecordFile) OpenRead() error {
+	return OpenWithBufferSizes(p, 0, 0, OMode_Read)
+}
+
+func (p *FlatRecordFile) OpenWrite() error {
+	return OpenWithBufferSizes(p, 0, 0, OMode_Write)
 }
 
 // Opens the underlying reader with buffer sizes specified in the arguments.
 // useful for larger tokens than the default 64k
-func (p *FlatRecordFile) OpenWithBufferSizes(readersize, writersize int) (err error) {
+func OpenWithBufferSizes(p *FlatRecordFile, readersize, writersize, openmode int) (err error) {
 	if p.fp != nil {
 		err = errOpen
 	}
@@ -148,27 +158,42 @@ func (p *FlatRecordFile) OpenWithBufferSizes(readersize, writersize int) (err er
 		err = errbufsiz
 	}
 	if err == nil {
-		if fi, errstat := os.Stat(p.fname); errstat == nil {
-			if fi.IsDir() {
+		fi, errstat := os.Stat(p.fname)
+		switch openmode {
+		case OMode_Write:
+			if errstat != nil { // file NX . create new
+				log.Printf("creating new file :%s", p.fname)
+				p.fp, err = os.OpenFile(p.fname, os.O_WRONLY|os.O_CREATE, 0660)
+			} else { //open for append
+				if fi.IsDir() {
+					return errfile
+				}
+				log.Printf("opening file :%s for append", p.fname)
+				p.fp, err = os.OpenFile(p.fname, os.O_WRONLY|os.O_APPEND, 0660)
+			}
+		case OMode_Read:
+			if errstat == nil && fi.IsDir() {
 				return errfile
 			}
-			log.Printf("File already exists.opening for append")
-			p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND, 0660)
+			log.Printf("opening file :%s for read", p.fname)
+			p.fp, err = os.OpenFile(p.fname, os.O_RDONLY, 0660)
 		}
-		p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
 		if err == nil {
-			if writersize == 0 {
-				p.writer = bufio.NewWriter(p)
+			if openmode == OMode_Write {
+				if writersize == 0 {
+					p.writer = bufio.NewWriter(p)
+				} else {
+					p.writer = bufio.NewWriterSize(p, writersize)
+				}
 			} else {
-				p.writer = bufio.NewWriterSize(p, writersize)
+				if readersize == 0 {
+					p.reader = bufio.NewReader(p)
+				} else {
+					p.reader = bufio.NewReaderSize(p, readersize)
+				}
+				p.Scanner = bufio.NewScanner(p.reader) //this should call our read
+				p.Scanner.Split(splitRecord)
 			}
-			if readersize == 0 {
-				p.reader = bufio.NewReader(p)
-			} else {
-				p.reader = bufio.NewReaderSize(p, readersize)
-			}
-			p.Scanner = bufio.NewScanner(p.reader) //this should call our read
-			p.Scanner.Split(splitRecord)
 		}
 	}
 	return
@@ -218,7 +243,9 @@ func (p *FlatRecordFile) Flush() (err error) {
 func (p *FlatRecordFile) Close() error {
 	p.Flush() // flush.
 	if p.fp != nil {
-		return p.fp.Close()
+		err := p.fp.Close()
+		p.fp = nil
+		return err
 	}
 	return errNotOpen
 }
@@ -227,7 +254,9 @@ func (p *FlatFootedRecordFile) Close() error {
 	p.Write(MarshalBytes(p.Footer))
 	p.Flush()
 	if p.fp != nil {
-		return p.fp.Close()
+		err := p.fp.Close()
+		p.fp = nil
+		return err
 	}
 	return errNotOpen
 }
