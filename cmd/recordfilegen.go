@@ -51,12 +51,12 @@ type {{.typename}}RecordFiler interface {
 }
 
 type {{.typename}}RecordFile struct {
-	*FlatRecordFile
+	*FlatFootedRecordFile
 }
 
 func New{{.typename}}RecordFile(fname string) *{{.typename}}RecordFile {
 	return &{{.typename}}RecordFile{
-		NewFlatRecordFile(fname),
+		NewFlatFootedRecordFile(fname),
 	}
 }
 
@@ -64,7 +64,7 @@ func (recfile *{{.typename}}RecordFile) Put(rec {{.type}}) error {
 	b := {{.fmarshal}}(rec)
 	_, err := recfile.Write(b)
 	if err == nil {
-		recfile.entries++
+		recfile.IncEntries(1)
 	}
 	return err
 }
@@ -82,6 +82,23 @@ func (recfile *{{.typename}}RecordFile) Get(ind int) ({{.type}}, error) {
 	}
 	return {{.type0}}, errind
 }
+
+/*
+func main() {
+        rf := NewstringRecordFile("/tmp/kota")
+        rf.OpenWrite()
+        rf.Put("testing1")
+        rf.Put("testing2")
+        rf.Put("testing3")
+        rf.Close()
+        fmt.Printf("Footer:%s", rf.Footer)
+        rf.OpenRead()
+        fmt.Println(rf.Get(1))
+        fmt.Println(rf.Get(2))
+        rf.Close()
+}
+*/
+
 `))
 
 var Usage = func() {

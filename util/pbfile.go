@@ -31,6 +31,7 @@ var magicbytes = uint32(118864)
 
 const (
 	RecordFile_Flat = iota
+	RecordFile_FlatFooted
 	RecordFile_Indexed
 )
 
@@ -52,10 +53,9 @@ type FlatFootedRecordFile struct {
 }
 
 func NewFlatFootedRecordFile(fname string) *FlatFootedRecordFile {
-	abspath, _ := filepath.Abs(fname)
 	return &FlatFootedRecordFile{
 		NewFlatRecordFile(fname),
-		&Footer{filedir: abspath, filename: filepath.Base(fname)},
+		nil,
 	}
 }
 
@@ -70,15 +70,15 @@ func NewFlatFootedRecordFile(fname string) *FlatFootedRecordFile {
 //so in the end the size of the file should be the sum of all the entry bytes +
 //footer size + 4. Length in the end of the file should be encoded in BigEndian
 type Footer struct {
-	footlen  uint32 // the length does NOT INCLUDE the magicbytes
-	entries  int64
-	filever  int
-	filedir  string
-	filename string
+	footlen    uint32 // the length does NOT INCLUDE the magicbytes
+	numentries int64
+	filever    int
+	filedir    string
+	filename   string
 }
 
 func (f *Footer) String() string {
-	return fmt.Sprintf("%d:%d:%s:%s", f.entries, f.filever, f.filedir, f.filename)
+	return fmt.Sprintf("%d:%d:%s:%s", f.numentries, f.filever, f.filedir, f.filename)
 }
 
 func MarshalBytes(a *Footer) []byte {
@@ -128,6 +128,10 @@ func (p *FlatRecordFile) Entries() (int64, error) {
 		return 0, errnoentries
 	}
 	return p.entries, nil
+}
+
+func (p *FlatRecordFile) IncEntries(n int64) {
+	p.entries += n
 }
 
 func (p *FlatRecordFile) Version() int {
@@ -242,6 +246,7 @@ func (p *FlatRecordFile) Close() error {
 }
 
 func (p *FlatFootedRecordFile) Close() error {
+	p.Footer = p.MakeFooter()
 	p.Write(MarshalBytes(p.Footer))
 	p.Flush()
 	if p.fp != nil {
@@ -250,6 +255,16 @@ func (p *FlatFootedRecordFile) Close() error {
 		return err
 	}
 	return errNotOpen
+}
+
+func (p *FlatFootedRecordFile) MakeFooter() *Footer {
+	abspath, _ := filepath.Abs(p.fname)
+	return &Footer{
+		filedir:    abspath,
+		filename:   filepath.Base(p.fname),
+		numentries: p.entries,
+		filever:    RecordFile_FlatFooted,
+	}
 }
 
 //a bufio scanner implementation that reads the record size and advances the reader.
