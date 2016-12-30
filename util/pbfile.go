@@ -8,13 +8,12 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 )
 
 var (
@@ -28,7 +27,6 @@ var (
 	errexists    = fmt.Errorf("File exists")
 	errmagic     = fmt.Errorf("Magic number in footer not detected")
 	errreadfoot  = fmt.Errorf("Error reading footer")
-	errparsefoot = fmt.Errorf("Error parsing footer")
 )
 
 //this is the magin number that should be in
@@ -70,42 +68,41 @@ func NewFootedRecordFile(fname string) *FootedRecordFile {
 //The end of a footer should always be the magicbytes uint32
 //using that an application can easily see if a file is of our type
 //Right before that the previous uint32 is the length of the footer
-//bytes. The footer is a utf-8 encoded column separated string. it should be parsed
-//after it is interpreted as a string. In a sense it is a reversed entry than the
+//bytes. The footer is a utf-8 encoded JSON string.In a sense it is a reversed entry than the
 //length prefixed records it follows. The length should not include the 4 magic bytes.
 //neither the 4 bytes of the footer length. it should be just the number of string bytes
 //so in the end the size of the file should be the sum of all the entry bytes +
 //footer size + 4. Length in the end of the file should be encoded in BigEndian
 type Footer struct {
-	footlen    uint32 // the length does NOT INCLUDE the magicbytes or its BigEndian encoded replica at the end of the record.
-	numentries uint64
-	filever    uint16
-	filedir    string
-	filename   string
+	Numentries uint64
+	Filever    uint16
+	Filedir    string
+	Filename   string
+	Sections   []Section
+}
+
+type Section struct {
+	Compressed bool
+	Secnum     uint32
+	Start_off  uint64
+	Offsets    []Offset
+}
+
+type Offset struct {
+	Recnum uint64
+	Off    uint64
 }
 
 func (f *Footer) String() string {
-	return fmt.Sprintf("%d:%d:%s:%s", f.numentries, f.filever, f.filedir, f.filename)
+	jb, _ := json.Marshal(f)
+	return string(jb)
 }
 
-func ParseFooter(a string) (*Footer, error) {
-	fields := strings.Split(a, ":")
-	if len(fields) != 4 {
-		return nil, errparsefoot
-	}
+func ParseFooter(a []byte) (*Footer, error) {
 	foot := &Footer{}
-	ne, err := strconv.ParseUint(fields[0], 10, 64)
-	if err != nil {
+	if err := json.Unmarshal(a, foot); err != nil {
 		return nil, err
 	}
-	foot.numentries = ne
-	ver, err := strconv.ParseUint(fields[1], 10, 16)
-	if err != nil {
-		return nil, err
-	}
-	foot.filever = uint16(ver)
-	foot.filedir = fields[2]
-	foot.filename = fields[3]
 	return foot, nil
 }
 
@@ -115,8 +112,11 @@ func ParseFooter(a string) (*Footer, error) {
 //by the length of the bytes mentioned above so this will appear as a
 //normal record (but it won't parse normally)
 func MarshalBytes(a *Footer) []byte {
-	fstr := a.String()
-	buf := bytes.NewBufferString(fstr)
+	jb, err := json.Marshal(a)
+	if err != nil {
+		log.Printf("error marshaling footer bytes:%s", err)
+	}
+	buf := bytes.NewBuffer(jb)
 	binary.Write(buf, binary.BigEndian, uint32(buf.Len())) //write the length of the encoded string
 	binary.Write(buf, binary.BigEndian, magicbytes)        //magic number to finish it off
 	return buf.Bytes()
@@ -182,8 +182,7 @@ func ReadFooter(from io.ReadSeeker) (*Footer, error) {
 		log.Printf("error: nb is %d  fsz is :%d footoffset: %d and err is:%s", nb, fsz, footof, err)
 		return nil, errreadfoot
 	}
-	fstr := string(footbuf)
-	return ParseFooter(fstr)
+	return ParseFooter(footbuf)
 }
 
 type FlatRecordFile struct {
@@ -292,7 +291,7 @@ func OpenWithBufferSizes(p *RecordFile, readersize, writersize, openmode int) (e
 
 //OpenRead will try to read the footer
 func (p *FootedRecordFile) OpenRead() error {
-	return OpenWithFooter(OMode_Read)
+	return p.OpenWithFooter(OMode_Read)
 }
 
 func (p *FootedRecordFile) OpenWithFooter(mode int) error {
@@ -314,7 +313,7 @@ func (p *FootedRecordFile) OpenWithFooter(mode int) error {
 
 //OpenWrite will try to read the footer
 func (p *FootedRecordFile) OpenWrite() error {
-	return OpenWithFooter(OMode_Write)
+	return p.OpenWithFooter(OMode_Write)
 }
 
 //implements io.Writer but enforces the bufio interfaces underneath
@@ -379,10 +378,10 @@ func (p *FootedRecordFile) Close() error {
 func (p *FootedRecordFile) MakeFooter() *Footer {
 	abspath, _ := filepath.Abs(p.fname)
 	return &Footer{
-		filedir:    abspath,
-		filename:   filepath.Base(p.fname),
-		numentries: p.entries,
-		filever:    RecordFile_FlatFooted,
+		Filedir:    abspath,
+		Filename:   filepath.Base(p.fname),
+		Numentries: p.entries,
+		Filever:    RecordFile_FlatFooted,
 	}
 }
 
