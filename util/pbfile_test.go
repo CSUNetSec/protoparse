@@ -28,3 +28,13 @@ func TestFlatOpenClose(t *testing.T) {
 		t.Error("error closing file: ", err)
 	}
 }
+
+func TestFootedOpenClose(t *testing.T) {
+	pf := NewFootedRecordFile("/tmp/testflatfooted")
+	if err := pf.OpenWrite(); err != nil {
+		t.Error("Error opening file: ", err)
+	}
+	if err := pf.Close(); err != nil {
+		t.Error("error closing file: ", err)
+	}
+}

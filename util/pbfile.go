@@ -9,20 +9,26 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 var (
-	errNotOpen   = fmt.Errorf("underlying file pointer is nil")
-	errOpen      = fmt.Errorf("underlying file pointer already open")
-	errbufsiz    = fmt.Errorf("buffer sizes can't be negative")
-	errbufsmall  = fmt.Errorf("buffer for read is to small to accomodate the record")
-	errnofoot    = fmt.Errorf("No header information")
+	errNotOpen   = fmt.Errorf("Underlying file pointer is nil")
+	errOpen      = fmt.Errorf("Underlying file pointer already open")
+	errbufsiz    = fmt.Errorf("Buffer sizes can't be negative")
+	errbufsmall  = fmt.Errorf("Buffer for read is to small to accomodate the record")
+	errnofoot    = fmt.Errorf("No footer information")
 	errnoentries = fmt.Errorf("No entries recorded in file")
 	errfile      = fmt.Errorf("File given to Open() is not a regular file")
 	errexists    = fmt.Errorf("File exists")
+	errmagic     = fmt.Errorf("Magic number in footer not detected")
+	errreadfoot  = fmt.Errorf("Error reading footer")
+	errparsefoot = fmt.Errorf("Error parsing footer")
 )
 
 //this is the magin number that should be in
@@ -41,20 +47,20 @@ const (
 )
 
 type RecordFiler interface {
-	Version() int
+	Version() uint16
 	Fname() string
 	Footer() (*Footer, error)
-	Entries() (int64, error)
+	Entries() (uint64, error)
 }
 
-type FlatFootedRecordFile struct {
-	*FlatRecordFile
+type FootedRecordFile struct {
+	*RecordFile
 	*Footer
 }
 
-func NewFlatFootedRecordFile(fname string) *FlatFootedRecordFile {
-	return &FlatFootedRecordFile{
-		NewFlatRecordFile(fname),
+func NewFootedRecordFile(fname string) *FootedRecordFile {
+	return &FootedRecordFile{
+		NewRecordFile(fname),
 		nil,
 	}
 }
@@ -67,12 +73,13 @@ func NewFlatFootedRecordFile(fname string) *FlatFootedRecordFile {
 //bytes. The footer is a utf-8 encoded column separated string. it should be parsed
 //after it is interpreted as a string. In a sense it is a reversed entry than the
 //length prefixed records it follows. The length should not include the 4 magic bytes.
+//neither the 4 bytes of the footer length. it should be just the number of string bytes
 //so in the end the size of the file should be the sum of all the entry bytes +
 //footer size + 4. Length in the end of the file should be encoded in BigEndian
 type Footer struct {
-	footlen    uint32 // the length does NOT INCLUDE the magicbytes
-	numentries int64
-	filever    int
+	footlen    uint32 // the length does NOT INCLUDE the magicbytes or its BigEndian encoded replica at the end of the record.
+	numentries uint64
+	filever    uint16
 	filedir    string
 	filename   string
 }
@@ -81,6 +88,32 @@ func (f *Footer) String() string {
 	return fmt.Sprintf("%d:%d:%s:%s", f.numentries, f.filever, f.filedir, f.filename)
 }
 
+func ParseFooter(a string) (*Footer, error) {
+	fields := strings.Split(a, ":")
+	if len(fields) != 4 {
+		return nil, errparsefoot
+	}
+	foot := &Footer{}
+	ne, err := strconv.ParseUint(fields[0], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	foot.numentries = ne
+	ver, err := strconv.ParseUint(fields[1], 10, 16)
+	if err != nil {
+		return nil, err
+	}
+	foot.filever = uint16(ver)
+	foot.filedir = fields[2]
+	foot.filename = fields[3]
+	return foot, nil
+}
+
+//MarshalBytes returns the bytes of
+//[bytes of footer string][len of footer string][magic num]
+//when this is writen to our underlying record file it is prepeneded
+//by the length of the bytes mentioned above so this will appear as a
+//normal record (but it won't parse normally)
 func MarshalBytes(a *Footer) []byte {
 	fstr := a.String()
 	buf := bytes.NewBufferString(fstr)
@@ -89,22 +122,22 @@ func MarshalBytes(a *Footer) []byte {
 	return buf.Bytes()
 }
 
-//A flat record file knows the number of records it has stored,
+//A record file knows the number of records it has stored,
 //every record is preceded by a 32bit unsigned value that is
 //the length of that record in Big Endian and after that the
 //bytes of the record
-type FlatRecordFile struct {
+type RecordFile struct {
 	fname   string
 	fp      *os.File
 	writer  *bufio.Writer
 	reader  *bufio.Reader
 	Scanner *bufio.Scanner
-	entries int64
+	entries uint64
 	sz      int64
 }
 
-func NewFlatRecordFile(fname string) *FlatRecordFile {
-	return &FlatRecordFile{
+func NewRecordFile(fname string) *RecordFile {
+	return &RecordFile{
 		fname:   fname,
 		fp:      nil,
 		writer:  nil,
@@ -112,6 +145,54 @@ func NewFlatRecordFile(fname string) *FlatRecordFile {
 		Scanner: nil,
 		entries: 0,
 		sz:      0,
+	}
+}
+
+//Seeks to the end of the file, validates the magic number,
+//reads the bytes of the footer, reads the footer as a string
+//and calls ParseFooter on it.
+func ReadFooter(from io.ReadSeeker) (*Footer, error) {
+	//Seek 4 bytes from the end of the file
+	off, err := from.Seek(-4, 2) //2 is io.SeekEnd
+	if err != nil {
+		return nil, err
+	}
+	magic32 := uint32(0)
+	binary.Read(from, binary.BigEndian, &magic32)
+	if magic32 != magicbytes {
+		return nil, errmagic
+	}
+	//seek to the length of the footer.
+	off, err = from.Seek(-8, 2) //2 is io.SeekEnd
+	if err != nil {
+		return nil, err
+	}
+	fsz := uint32(0)
+	binary.Read(from, binary.BigEndian, &fsz)
+	if fsz == 0 || int64(fsz) > off { //something crazy happened. footer can't be bigger than file
+		return nil, errnofoot
+	}
+	footof, err := from.Seek(-int64(fsz+8), 2) //2 is io.SeekEnd
+	if err != nil {
+		return nil, err
+	}
+	footbuf := make([]byte, fsz)
+	nb, err := from.Read(footbuf)
+	if nb != int(fsz) || err != nil {
+		log.Printf("error: nb is %d  fsz is :%d footoffset: %d and err is:%s", nb, fsz, footof, err)
+		return nil, errreadfoot
+	}
+	fstr := string(footbuf)
+	return ParseFooter(fstr)
+}
+
+type FlatRecordFile struct {
+	*RecordFile
+}
+
+func NewFlatRecordFile(fname string) *FlatRecordFile {
+	return &FlatRecordFile{
+		NewRecordFile(fname),
 	}
 }
 
@@ -123,36 +204,39 @@ func (p *FlatRecordFile) Footer() (*Footer, error) {
 //Entries in a flat record file are not guaranteed
 //to be correct. they are dependant to the position
 //of the writer.
-func (p *FlatRecordFile) Entries() (int64, error) {
+func (p *FlatRecordFile) Entries() (uint64, error) {
 	if p.entries == 0 {
 		return 0, errnoentries
 	}
 	return p.entries, nil
 }
 
-func (p *FlatRecordFile) IncEntries(n int64) {
+func (p *RecordFile) IncEntries(n uint64) {
 	p.entries += n
 }
 
-func (p *FlatRecordFile) Version() int {
+func (p *FlatRecordFile) Version() uint16 {
 	return RecordFile_Flat
 }
 
-func (p *FlatRecordFile) Fname() string {
+func (p *RecordFile) Fname() string {
 	return p.fname
 }
 
-func (p *FlatRecordFile) OpenRead() error {
-	return OpenWithBufferSizes(p, 0, 0, OMode_Read)
+func (p *RecordFile) OpenRead() error {
+	err, _ := OpenWithBufferSizes(p, 0, 0, OMode_Read)
+	return err
 }
 
-func (p *FlatRecordFile) OpenWrite() error {
-	return OpenWithBufferSizes(p, 0, 0, OMode_Write)
+func (p *RecordFile) OpenWrite() error {
+	err, _ := OpenWithBufferSizes(p, 0, 0, OMode_Write)
+	return err
 }
 
 // Opens the underlying reader with buffer sizes specified in the arguments.
 // useful for larger tokens than the default 64k
-func OpenWithBufferSizes(p *FlatRecordFile, readersize, writersize, openmode int) (err error) {
+func OpenWithBufferSizes(p *RecordFile, readersize, writersize, openmode int) (err error, created bool) {
+	created = false
 	if p.fp != nil {
 		err = errOpen
 	}
@@ -166,16 +250,20 @@ func OpenWithBufferSizes(p *FlatRecordFile, readersize, writersize, openmode int
 			if errstat != nil { // file NX . create new
 				log.Printf("creating new file :%s", p.fname)
 				p.fp, err = os.OpenFile(p.fname, os.O_WRONLY|os.O_CREATE, 0660)
+				created = true
 			} else { //open for append
 				if fi.IsDir() {
-					return errfile
+					err = errfile
+					break
 				}
 				log.Printf("opening file :%s for append", p.fname)
-				p.fp, err = os.OpenFile(p.fname, os.O_WRONLY|os.O_APPEND, 0660)
+				//we need to open as read too to check the footer
+				p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND, 0660)
 			}
 		case OMode_Read:
 			if errstat == nil && fi.IsDir() {
-				return errfile
+				err = errfile
+				break
 			}
 			log.Printf("opening file :%s for read", p.fname)
 			p.fp, err = os.OpenFile(p.fname, os.O_RDONLY, 0660)
@@ -183,15 +271,15 @@ func OpenWithBufferSizes(p *FlatRecordFile, readersize, writersize, openmode int
 		if err == nil {
 			if openmode == OMode_Write {
 				if writersize == 0 {
-					p.writer = bufio.NewWriter(p)
+					p.writer = bufio.NewWriter(p.fp)
 				} else {
-					p.writer = bufio.NewWriterSize(p, writersize)
+					p.writer = bufio.NewWriterSize(p.fp, writersize)
 				}
 			} else {
 				if readersize == 0 {
-					p.reader = bufio.NewReader(p)
+					p.reader = bufio.NewReader(p.fp)
 				} else {
-					p.reader = bufio.NewReaderSize(p, readersize)
+					p.reader = bufio.NewReaderSize(p.fp, readersize)
 				}
 				p.Scanner = bufio.NewScanner(p.reader) //this should call our read
 				p.Scanner.Split(splitRecord)
@@ -201,9 +289,43 @@ func OpenWithBufferSizes(p *FlatRecordFile, readersize, writersize, openmode int
 	return
 }
 
+//OpenRead will try to read the footer
+func (p *FootedRecordFile) OpenRead() error {
+	err, newfile := OpenWithBufferSizes(p.RecordFile, 0, 0, OMode_Read)
+	if err != nil {
+		return err
+	}
+	if !newfile {
+		foot, err := ReadFooter(p.fp)
+		if err != nil {
+			return err
+		}
+		log.Printf("read footer :%s", foot)
+		p.Footer = foot
+	}
+	return nil
+}
+
+//OpenWrite will try to read the footer
+func (p *FootedRecordFile) OpenWrite() error {
+	err, newfile := OpenWithBufferSizes(p.RecordFile, 0, 0, OMode_Write)
+	if err != nil {
+		return err
+	}
+	if !newfile {
+		foot, err := ReadFooter(p.fp)
+		if err != nil {
+			return err
+		}
+		log.Printf("read footer :%s", foot)
+		p.Footer = foot
+	}
+	return nil
+}
+
 //implements io.Writer but enforces the bufio interfaces underneath
 //bytes written here increase the recorded size of the file.
-func (p *FlatRecordFile) Write(b []byte) (n int, err error) {
+func (p *RecordFile) Write(b []byte) (n int, err error) {
 	if p.fp == nil {
 		return 0, errNotOpen
 	}
@@ -220,22 +342,24 @@ func (p *FlatRecordFile) Write(b []byte) (n int, err error) {
 	return nb, nil
 }
 
-func (p *FlatRecordFile) Read(b []byte) (int, error) {
+func (p *RecordFile) Read(b []byte) (int, error) {
 	if p.fp == nil {
 		return 0, errNotOpen
 	}
 	return p.fp.Read(b)
 }
 
-func (p *FlatRecordFile) Flush() (err error) {
+func (p *RecordFile) Flush() (err error) {
 	if p.writer != nil {
+		log.Printf("flushing writer")
 		err = p.writer.Flush()
 	}
 	return
 }
 
 //implements io.Closer
-func (p *FlatRecordFile) Close() error {
+func (p *RecordFile) Close() error {
+	log.Printf("Record Close called")
 	p.Flush() // flush.
 	if p.fp != nil {
 		err := p.fp.Close()
@@ -245,19 +369,20 @@ func (p *FlatRecordFile) Close() error {
 	return errNotOpen
 }
 
-func (p *FlatFootedRecordFile) Close() error {
+func (p *FootedRecordFile) Close() error {
+	log.Printf("FootedRecord Close called")
 	p.Footer = p.MakeFooter()
-	p.Write(MarshalBytes(p.Footer))
-	p.Flush()
-	if p.fp != nil {
-		err := p.fp.Close()
-		p.fp = nil
+	log.Printf("Footer is:%s", p.Footer)
+	nb, err := p.Write(MarshalBytes(p.Footer))
+	if err != nil {
+		log.Printf("Error in close:%s", err)
 		return err
 	}
-	return errNotOpen
+	log.Printf("wrote %d bytes", nb)
+	return p.RecordFile.Close()
 }
 
-func (p *FlatFootedRecordFile) MakeFooter() *Footer {
+func (p *FootedRecordFile) MakeFooter() *Footer {
 	abspath, _ := filepath.Abs(p.fname)
 	return &Footer{
 		filedir:    abspath,
