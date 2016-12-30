@@ -27,6 +27,7 @@ var (
 	errexists    = fmt.Errorf("File exists")
 	errmagic     = fmt.Errorf("Magic number in footer not detected")
 	errreadfoot  = fmt.Errorf("Error reading footer")
+	errcopytmp   = fmt.Errorf("Error copying to the temporary file and back")
 )
 
 //this is the magin number that should be in
@@ -54,12 +55,14 @@ type RecordFiler interface {
 type FootedRecordFile struct {
 	*RecordFile
 	*Footer
+	footoff int64 //offset of footer from the beginning of the file
 }
 
 func NewFootedRecordFile(fname string) *FootedRecordFile {
 	return &FootedRecordFile{
 		NewRecordFile(fname),
 		nil,
+		0,
 	}
 }
 
@@ -150,8 +153,13 @@ func NewRecordFile(fname string) *RecordFile {
 
 //Seeks to the end of the file, validates the magic number,
 //reads the bytes of the footer, reads the footer as a string
-//and calls ParseFooter on it.
-func ReadFooter(from io.ReadSeeker) (*Footer, error) {
+//and calls ParseFooter on it. the last argument it returns are the
+//number of bytes of the footer
+func (f *FootedRecordFile) ReadFooter() (*Footer, error) {
+	if f.fp == nil {
+		return nil, errfile
+	}
+	from := f.fp
 	//Seek 4 bytes from the end of the file
 	off, err := from.Seek(-4, 2) //2 is io.SeekEnd
 	if err != nil {
@@ -176,6 +184,7 @@ func ReadFooter(from io.ReadSeeker) (*Footer, error) {
 	if err != nil {
 		return nil, err
 	}
+	f.footoff = footof
 	footbuf := make([]byte, fsz)
 	nb, err := from.Read(footbuf)
 	if nb != int(fsz) || err != nil {
@@ -258,7 +267,7 @@ func OpenWithBufferSizes(p *RecordFile, readersize, writersize, openmode int) (e
 				}
 				log.Printf("opening file :%s for append", p.fname)
 				//we need to open as read too to check the footer
-				p.fp, err = os.OpenFile(p.fname, os.O_RDWR|os.O_APPEND, 0660)
+				p.fp, err = os.OpenFile(p.fname, os.O_RDWR, 0660)
 			}
 		case OMode_Read:
 			if errstat == nil && fi.IsDir() {
@@ -300,12 +309,54 @@ func (p *FootedRecordFile) OpenWithFooter(mode int) error {
 		return err
 	}
 	if !newfile {
-		foot, err := ReadFooter(p.fp)
+		foot, err := p.ReadFooter()
 		if err != nil {
 			return err
 		}
+		//create a new file and append everything up to the footer to it
+		newfname := foot.Filedir + ".temp"
+		newf, err := os.OpenFile(newfname, os.O_RDWR|os.O_CREATE, 0660)
+		if err != nil {
+			return err
+		}
+		p.fp.Seek(0, 0)               //Seek to the start of the file in the source file
+		endofdataoff := p.footoff - 4 //cause the footer is prepended by it's length in 4 bytes
+		wb, err := io.CopyN(newf, p.fp, endofdataoff)
+		if err != nil {
+			return err
+		}
+		if wb != endofdataoff {
+			log.Printf("did not copy the file to the temporary up to footer. wrote %d", wb)
+			return errcopytmp
+		}
+		log.Printf("copied %d bytes from the source file to the tmp file", wb)
+		//now truncate the original file and rewrite the bytes from the tmp
+		p.fp, err = os.OpenFile(foot.Filedir, os.O_WRONLY|os.O_CREATE, 0660)
+		newf.Seek(0, 0) //Seek to the start of the file in the temp file
+		if err != nil {
+			return err
+		}
+		wb, err = io.CopyN(p.fp, newf, endofdataoff)
+		if err != nil {
+			return err
+		}
+		log.Printf("copied %d bytes from the temp file to the new source", wb)
+		if wb != endofdataoff {
+			log.Printf("did not copy the file from the temporary up to footer")
+			return errcopytmp
+		}
+		//now we can seafely remove the temp file
+		err = newf.Close()
+		if err != nil {
+			return err
+		}
+		err = os.Remove(foot.Filedir + ".temp")
+		if err != nil {
+			log.Printf("error removing temp file")
+		}
 		log.Printf("read footer :%s", foot)
 		p.Footer = foot
+
 	}
 	return nil
 
