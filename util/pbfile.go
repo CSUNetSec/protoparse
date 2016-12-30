@@ -235,6 +235,7 @@ func (p *RecordFile) OpenWrite() error {
 
 // Opens the underlying reader with buffer sizes specified in the arguments.
 // useful for larger tokens than the default 64k
+// returns if it created a new file or if it just opened an existing one
 func OpenWithBufferSizes(p *RecordFile, readersize, writersize, openmode int) (err error, created bool) {
 	created = false
 	if p.fp != nil {
@@ -291,7 +292,11 @@ func OpenWithBufferSizes(p *RecordFile, readersize, writersize, openmode int) (e
 
 //OpenRead will try to read the footer
 func (p *FootedRecordFile) OpenRead() error {
-	err, newfile := OpenWithBufferSizes(p.RecordFile, 0, 0, OMode_Read)
+	return OpenWithFooter(OMode_Read)
+}
+
+func (p *FootedRecordFile) OpenWithFooter(mode int) error {
+	err, newfile := OpenWithBufferSizes(p.RecordFile, 0, 0, mode)
 	if err != nil {
 		return err
 	}
@@ -304,23 +309,12 @@ func (p *FootedRecordFile) OpenRead() error {
 		p.Footer = foot
 	}
 	return nil
+
 }
 
 //OpenWrite will try to read the footer
 func (p *FootedRecordFile) OpenWrite() error {
-	err, newfile := OpenWithBufferSizes(p.RecordFile, 0, 0, OMode_Write)
-	if err != nil {
-		return err
-	}
-	if !newfile {
-		foot, err := ReadFooter(p.fp)
-		if err != nil {
-			return err
-		}
-		log.Printf("read footer :%s", foot)
-		p.Footer = foot
-	}
-	return nil
+	return OpenWithFooter(OMode_Write)
 }
 
 //implements io.Writer but enforces the bufio interfaces underneath
