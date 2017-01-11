@@ -134,7 +134,7 @@ func (b *bgpHeaderBuf) Parse() (protoparse.PbVal, error) {
 
 func itob(a uint8) bool {
 	ret := false
-	if a == 1 {
+	if a != 0 {
 		ret = true
 	}
 	return ret
@@ -189,20 +189,22 @@ func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error) {
 		attrlen uint16
 		tempas  uint32
 	)
+	//fmt.Printf("\ncalled with buflen:%d\n", len(buf))
 
 	if len(buf) < 2 {
 		//fmt.Printf(" ret here ")
 		return attrs, errors.New("not enough bytes for attr flags and code")
 	}
 readattr:
+	//fmt.Printf("\nreadattr buf %+v buflen:%d\n", buf, len(buf))
 	if len(buf) < 2 {
 		return attrs, nil
 	}
 	flagbyte := uint8(buf[0])
-	attrs.OptionalBit = itob(flagbyte & (1 << 0))
-	attrs.TransitiveBit = itob(flagbyte & (1 << 1))
-	attrs.PartialBit = itob(flagbyte & (1 << 2))
-	attrs.ExtendedBit = itob(flagbyte & (1 << 3))
+	attrs.OptionalBit = itob(flagbyte & (1 << 7))
+	attrs.TransitiveBit = itob(flagbyte & (1 << 6))
+	attrs.PartialBit = itob(flagbyte & (1 << 5))
+	attrs.ExtendedBit = itob(flagbyte & (1 << 4))
 	typebyte := pbbgp.BGPUpdate_Attributes_Type(uint8(buf[1]))
 	//fmt.Printf(" TYPE %d ", typebyte)
 	if attrs.ExtendedBit == true {
@@ -210,6 +212,7 @@ readattr:
 			return nil, errors.New("not enough bytes for extended attribute")
 		}
 		attrlen = uint16(binary.BigEndian.Uint16(buf[2:4]))
+		//fmt.Printf("in attrlen ext. attrlen:%d\n", attrlen)
 		if int(attrlen+4) <= len(buf) {
 			//buf = buf[attrlen+4:]
 			buf = buf[4:]
@@ -222,6 +225,7 @@ readattr:
 			return nil, errors.New("not enough bytes for extended attribute")
 		}
 		attrlen = uint16(buf[2])
+		//fmt.Printf("in attrlen. attrlen:%d\n", attrlen)
 		if int(attrlen+3) <= len(buf) {
 			//buf = buf[attrlen+3:]
 			buf = buf[3:]
@@ -452,10 +456,10 @@ readattr:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR)
 		//fmt.Printf(" [as4-aggregator] ")
 	default:
+		//fmt.Printf("\nunknown type!\n")
 		return attrs, fmt.Errorf(" [unknown type %d] ", typebyte)
 	}
 	buf = buf[int(attrlen)-totskip:]
-	//fmt.Printf("\nattribute skipping %d bytes\n", int(attrlen)-totskip)
 	goto readattr
 
 	//NOTREACHED
