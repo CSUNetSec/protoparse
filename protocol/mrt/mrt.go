@@ -8,6 +8,7 @@ import (
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
 	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
+	util "github.com/CSUNetSec/protoparse/util"
 	"net"
 	"time"
 )
@@ -56,10 +57,7 @@ func (m *mrtHhdrBuf) String() string {
 
 func (m *bgp4mpHdrBuf) String() string {
 	formatstr := "peer_as:%d local_as:%d interface_index:%d address_family:%d peer_ip:%s local_ip:%s"
-	if m.isv6 {
-		return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv6), net.IP(m.dest.LocalIp.Ipv6))
-	}
-	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(m.dest.PeerIp.Ipv4).To4(), net.IP(m.dest.LocalIp.Ipv4).To4())
+	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(util.GetIP(m.dest.PeerIp)), net.IP(util.GetIP(m.dest.LocalIp)))
 }
 
 func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
@@ -113,8 +111,8 @@ func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
 		b4hdrb.buf = b4hdrb.buf[12:]
 	case bgp.AFI_IP6:
 		b4hdrb.isv6 = true
-		pip.Ipv4 = b4hdrb.buf[4:20]
-		lip.Ipv4 = b4hdrb.buf[20:36]
+		pip.Ipv6 = b4hdrb.buf[4:20]
+		lip.Ipv6 = b4hdrb.buf[20:36]
 		b4hdrb.dest.PeerIp = pip
 		b4hdrb.dest.LocalIp = lip
 		b4hdrb.buf = b4hdrb.buf[36:]

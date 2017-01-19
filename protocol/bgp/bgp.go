@@ -8,6 +8,7 @@ import (
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
+	"github.com/CSUNetSec/protoparse/util"
 	"net"
 )
 
@@ -58,11 +59,7 @@ func (b *bgpUpdateBuf) String() string {
 		if len(b.dest.WithdrawnRoutes.Prefixes) != 0 {
 			ret += fmt.Sprintf(" Withdrawn Routes (%d):\n", len(b.dest.WithdrawnRoutes.Prefixes))
 			for _, wr := range b.dest.WithdrawnRoutes.Prefixes {
-				if b.isv6 {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv6), wr.Mask)
-				} else {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(wr.Prefix.Ipv4).To4(), wr.Mask)
-				}
+				ret += fmt.Sprintf("%s/%d\n", net.IP(util.GetIP(wr.GetPrefix())), wr.Mask)
 			}
 		}
 	}
@@ -70,11 +67,7 @@ func (b *bgpUpdateBuf) String() string {
 		if len(b.dest.AdvertizedRoutes.Prefixes) != 0 {
 			ret += fmt.Sprintf(" Advertized Routes (%d):\n", len(b.dest.AdvertizedRoutes.Prefixes))
 			for _, ar := range b.dest.AdvertizedRoutes.Prefixes {
-				if b.isv6 {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv6), ar.Mask)
-				} else {
-					ret += fmt.Sprintf("%s/%d\n", net.IP(ar.Prefix.Ipv4).To4(), ar.Mask)
-				}
+				ret += fmt.Sprintf("%s/%d\n", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
 			}
 		}
 	}
@@ -90,22 +83,14 @@ func (b *bgpUpdateBuf) String() string {
 		}
 		if b.dest.Attrs.NextHop != nil {
 			ret += "\nNext-Hop:"
-			if b.isv6 {
-				ret += fmt.Sprintf("%s", net.IP(b.dest.Attrs.NextHop.Ipv6))
-			} else {
-				ret += fmt.Sprintf("%s", net.IP(b.dest.Attrs.NextHop.Ipv4).To4())
-			}
+			ret += fmt.Sprintf("%s", net.IP(util.GetIP(b.dest.Attrs.NextHop)))
 		}
 		if b.dest.Attrs.AtomicAggregate {
 			ret += "\nAtomic-Aggregate: true\n"
 		}
 		if b.dest.Attrs.Aggregator != nil {
 			ret += "\nAggregator:"
-			if b.isv6 {
-				ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv6))
-			} else {
-				ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(b.dest.Attrs.Aggregator.Ip.Ipv4).To4())
-			}
+			ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(util.GetIP(b.dest.Attrs.Aggregator.Ip)))
 		}
 		if b.dest.Attrs.Communities != nil {
 			ret += "\nCommunities:"
@@ -183,22 +168,26 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 	return wpslice
 }
 
-func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error) {
+//this function returns the attributes but also the withdrawn prefixes or advertised prefixes found in MP_REACH/UNREACH
+//because RFC2283 decided to shove that in the attributes. thanks ietf.
+func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
 	attrs := new(pbbgp.BGPUpdate_Attributes)
 	var (
 		attrlen uint16
 		tempas  uint32
+		mpadv   []*pbcom.PrefixWrapper
+		mpwdr   []*pbcom.PrefixWrapper
 	)
 	//fmt.Printf("\ncalled with buflen:%d\n", len(buf))
 
 	if len(buf) < 2 {
 		//fmt.Printf(" ret here ")
-		return attrs, errors.New("not enough bytes for attr flags and code")
+		return attrs, errors.New("not enough bytes for attr flags and code"), nil, nil
 	}
 readattr:
 	//fmt.Printf("\nreadattr buf %+v buflen:%d\n", buf, len(buf))
 	if len(buf) < 2 {
-		return attrs, nil
+		return attrs, nil, mpadv, mpwdr
 	}
 	flagbyte := uint8(buf[0])
 	attrs.OptionalBit = itob(flagbyte & (1 << 7))
@@ -209,7 +198,7 @@ readattr:
 	//fmt.Printf(" TYPE %d ", typebyte)
 	if attrs.ExtendedBit == true {
 		if len(buf) < 4 {
-			return nil, errors.New("not enough bytes for extended attribute")
+			return nil, errors.New("not enough bytes for extended attribute"), nil, nil
 		}
 		attrlen = uint16(binary.BigEndian.Uint16(buf[2:4]))
 		//fmt.Printf("in attrlen ext. attrlen:%d\n", attrlen)
@@ -218,11 +207,11 @@ readattr:
 			buf = buf[4:]
 		} else {
 			//fmt.Printf(" ret here1 ")
-			return attrs, nil
+			return attrs, nil, mpadv, mpwdr
 		}
 	} else {
 		if len(buf) < 3 {
-			return nil, errors.New("not enough bytes for extended attribute")
+			return nil, errors.New("not enough bytes for extended attribute"), nil, nil
 		}
 		attrlen = uint16(buf[2])
 		//fmt.Printf("in attrlen. attrlen:%d\n", attrlen)
@@ -231,13 +220,13 @@ readattr:
 			buf = buf[3:]
 		} else {
 			//fmt.Printf(" ret here2 attrlen:%d and lenbuf:%d", attrlen, len(buf))
-			return attrs, nil
+			return attrs, nil, mpadv, mpwdr
 		}
 	}
 	if attrlen == 0 {
 		//fmt.Printf("\n attren is 0 \n")
 		//fmt.Printf(" ret here3 ")
-		return attrs, nil
+		return attrs, nil, mpadv, mpwdr
 	}
 
 	//fmt.Printf("attributes:%+v\n", attrs)
@@ -249,7 +238,8 @@ readattr:
 		//fmt.Printf(" [origin] ")
 		if attrlen != 1 {
 			//XXX: when i have MP_REACH and unreach this is 2 bytes long. why?
-			return nil, fmt.Errorf("origin attribute should be 1 byte long and it is:%d", attrlen)
+			//maybe it's related to the stackoverflow attribute i commented on this patch...?
+			return nil, fmt.Errorf("origin attribute should be 1 byte long and it is:%d", attrlen), nil, nil
 		}
 		//attrs.Origin = new(pb.BGPUpdate_Attributes_Origin)
 		attrs.Origin = pbbgp.BGPUpdate_Attributes_Origin(buf[0])
@@ -261,7 +251,7 @@ readattr:
 	readseg:
 		seg := new(pbbgp.BGPUpdate_ASPathSegment)
 		if len(buf) < 2 {
-			return nil, errors.New("not enough bytes for path segment type and path length")
+			return nil, errors.New("not enough bytes for path segment type and path length"), nil, nil
 		}
 		ptype := uint8(buf[0])
 		setp := false
@@ -272,16 +262,16 @@ readattr:
 			setp = false
 		default:
 			//fmt.Printf("\n--err aspath--\n")
-			return nil, fmt.Errorf("unknown path segment type %d", ptype)
+			return nil, fmt.Errorf("unknown path segment type %d", ptype), nil, nil
 		}
 		plen := int(buf[1])
 		buf = buf[2:]
 		totskip += 2
 		switch {
 		case !as4 && len(buf) < int(plen)*2:
-			return nil, fmt.Errorf("not enough bytes for an AS2 path segment of length %d", plen)
+			return nil, fmt.Errorf("not enough bytes for an AS2 path segment of length %d", plen), nil, nil
 		case as4 && len(buf) < int(plen)*4:
-			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen)
+			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen), nil, nil
 		}
 
 		for pind := 0; pind < plen; pind++ {
@@ -322,7 +312,7 @@ readattr:
 			addr.Ipv4 = ipbuf
 		default:
 			//fmt.Sprintf("got fail")
-			return nil, fmt.Errorf("nexthop ip bytes don't agree in length with function invocation ip type")
+			return nil, fmt.Errorf("nexthop ip bytes don't agree in length with function invocation ip type"), nil, nil
 		}
 		//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
 		attrs.NextHop = addr
@@ -331,7 +321,7 @@ readattr:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MULTI_EXIT)
 		//fmt.Printf(" [multi-exit] ")
 		if attrlen != 4 {
-			return nil, fmt.Errorf("multi-exit discriminator should be 4 bytes")
+			return nil, fmt.Errorf("multi-exit discriminator should be 4 bytes"), nil, nil
 		}
 		me := binary.BigEndian.Uint32(buf[:attrlen])
 		attrs.MultiExit = me
@@ -339,7 +329,7 @@ readattr:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_LOCAL_PREF)
 		//fmt.Printf(" [local-pref] ")
 		if attrlen != 4 {
-			return nil, fmt.Errorf("local-pref should be 4 bytes")
+			return nil, fmt.Errorf("local-pref should be 4 bytes"), nil, nil
 		}
 		lp := binary.BigEndian.Uint32(buf[:attrlen])
 		attrs.LocalPref = lp
@@ -379,7 +369,7 @@ readattr:
 			copy(ipbuf, buf[4:20])
 			addr.Ipv6 = ipbuf
 		default:
-			return nil, fmt.Errorf("not correct amount of bytes for Aggregator Attribute")
+			return nil, fmt.Errorf("not correct amount of bytes for Aggregator Attribute"), nil, nil
 		}
 		aggr.Ip = addr
 		attrs.Aggregator = aggr
@@ -397,9 +387,79 @@ readattr:
 		attrs.Communities.Communities = append(attrs.Communities.Communities, com)
 	case pbbgp.BGPUpdate_Attributes_MP_REACH_NLRI:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MP_REACH_NLRI)
+
+		if len(buf) < 4 {
+			return nil, fmt.Errorf("not enough bytes for MP_REACH"), nil, nil
+		}
+		nhl := uint8(buf[3])
+		buf = buf[4:] //skup over AFI SAFI and length of next hop
+		totskip += 4
+		if nhl > 0 && int(nhl) < len(buf) { //set next hop
+			attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_NEXT_HOP)
+			//fmt.Printf(" [next-hop] ", attrlen, v6)
+			addr := new(pbcom.IPAddressWrapper)
+			switch {
+			case v6 == true && nhl == 16:
+				ipbuf := make([]byte, 16)
+				copy(ipbuf, buf[:nhl])
+				//fmt.Sprintf("got v6 :%v", ipbuf)
+				addr.Ipv6 = ipbuf
+			//http://networkengineering.stackexchange.com/questions/12556/how-to-interpret-mp-reach-nlri-attribute-with-address-length-of-32-bytes-contain
+			//this is the global ipv6 and the linklocal ipv6
+			//RFC- 2545 Use of BGP-4 Multiprotocol Extensions for IPv6 Inter-Domain Routing"
+			case v6 == true && nhl == 32:
+				ipbuf := make([]byte, 16)
+				copy(ipbuf, buf[:16])
+				addr.Ipv6 = ipbuf //XXX for now ignoring the link local ipv6
+			case v6 == false && nhl == 4:
+				ipbuf := make([]byte, 4)
+				copy(ipbuf, buf[:nhl])
+				//fmt.Sprintf("got v4 :%v", ipbuf)
+				addr.Ipv4 = ipbuf
+			default:
+				//fmt.Sprintf("got fail")
+				return nil, fmt.Errorf("nexthop ip bytes (%d) in MP_REACH don't agree in length with function invocation (v6:%v) ip type", nhl, v6), nil, nil
+			}
+			attrs.NextHop = addr //This next hop is prefered if it exists
+		} else {
+			return nil, fmt.Errorf("next hop length in MP_REACH is malformed"), nil, nil
+		}
+		buf = buf[nhl:]
+		totskip += int(nhl)
+		if len(buf) < 1 {
+			return nil, fmt.Errorf("not enough space in MP_REACH for SNPA number info"), nil, nil
+		}
+		snpanum := uint8(buf[0]) //number of SNPAs
+		buf = buf[1:]
+		totskip += 1
+		if snpanum > 0 { //XXX jump over them for now
+			innerskip, snpal := 0, uint8(0)
+			for i := 0; i < int(snpanum); i++ {
+				if len(buf) < 1 {
+					return nil, fmt.Errorf("not enough space in MP_REACH for SNPA length info"), nil, nil
+				}
+				snpal = uint8(buf[0])
+				buf = buf[1:]
+				innerskip += 1
+				if int(snpal) > len(buf) {
+					return nil, fmt.Errorf("not enough space in MP_REACH for SNPA info"), nil, nil
+				}
+				buf = buf[snpal:]
+				innerskip += int(snpal)
+			}
+			totskip += innerskip
+		}
+		mpadv = readPrefix(buf, v6)
 		//fmt.Printf(" [MP_REACH_NLRI] ")
 	case pbbgp.BGPUpdate_Attributes_MP_UNREACH_NLRI:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_MP_UNREACH_NLRI)
+		if len(buf) < 3 {
+			return nil, fmt.Errorf("not enough bytes for MP unreach"), nil, nil
+		}
+		//XXX skip over AFI and SAFI
+		buf = buf[3:]
+		totskip += 3
+		mpwdr = readPrefix(buf, v6)
 		//fmt.Printf(" [MP_UNREACH_NLRI] ")
 	case pbbgp.BGPUpdate_Attributes_EXTENDED_COMMUNITY:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_EXTENDED_COMMUNITY)
@@ -420,7 +480,7 @@ readattr:
 	readseg4:
 		seg := new(pbbgp.BGPUpdate_ASPathSegment)
 		if len(buf) < 2 {
-			return nil, errors.New("not enough bytes for path segment type and path length")
+			return nil, errors.New("not enough bytes for path segment type and path length"), nil, nil
 		}
 		ptype := uint8(buf[0])
 		setp := false
@@ -430,13 +490,13 @@ readattr:
 		case 2:
 			setp = false
 		default:
-			return nil, fmt.Errorf("unknown path segment type %d", ptype)
+			return nil, fmt.Errorf("unknown path segment type %d", ptype), nil, nil
 		}
 		plen := int(buf[1])
 		buf = buf[2:]
 		totskip += 2
 		if len(buf) < int(plen)*4 {
-			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen)
+			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen), nil, nil
 		}
 		for pind := 0; pind < plen; pind++ {
 			as := binary.BigEndian.Uint32(buf[:4])
@@ -457,13 +517,13 @@ readattr:
 		//fmt.Printf(" [as4-aggregator] ")
 	default:
 		//fmt.Printf("\nunknown type!\n")
-		return attrs, fmt.Errorf(" [unknown type %d] ", typebyte)
+		return attrs, fmt.Errorf(" [unknown type %d] ", typebyte), nil, nil
 	}
 	buf = buf[int(attrlen)-totskip:]
 	goto readattr
 
 	//NOTREACHED
-	return attrs, nil
+	return attrs, nil, mpadv, mpwdr
 }
 
 func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
@@ -498,25 +558,39 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		if len(b.buf) < int(attrlen) {
 			return nil, errors.New("not enough bytes for attributes")
 		}
-		//XXX:parse them
 		//attrtype := binary.BigEndian.Uint16(b.buf[:2])
-		attrs, errattr := readAttrs(b.buf[:attrlen], b.isAS4, b.isv6)
+		attrs, errattr, mpadv, mpwdr := readAttrs(b.buf[:attrlen], b.isAS4, b.isv6)
 		if errattr != nil { //XXX log the error?
 			return nil, errattr
 		}
 		//fmt.Printf("attributes: %s\n", attrs)
-		//XXX move over them for now
 		b.buf = b.buf[attrlen:]
 		b.dest.Attrs = attrs
 		nlrilen := uplen - 4 - int(attrlen) - wlen
+		if len(mpadv) != 0 { // we got advertised routes from mp_reach
+			b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
+			b.dest.AdvertizedRoutes.Prefixes = mpadv
+		}
+		if len(mpwdr) != 0 {
+			if b.dest.WithdrawnRoutes == nil { //make a new one
+				b.dest.WithdrawnRoutes = new(pbbgp.BGPUpdate_WithdrawnRoutes)
+				b.dest.WithdrawnRoutes.Prefixes = mpwdr
+			} else { // append them
+				b.dest.WithdrawnRoutes.Prefixes = append(b.dest.WithdrawnRoutes.Prefixes, mpwdr...)
+			}
+		}
 		if nlrilen == 0 || nlrilen < 0 {
 			return nil, nil //return. it might only have withdraws
 		}
 		//fmt.Println("nrlilen:", nlrilen)
 		nlrislice := readPrefix(b.buf[:nlrilen], b.isv6)
 		b.buf = b.buf[nlrilen:]
-		b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
-		b.dest.AdvertizedRoutes.Prefixes = nlrislice
+		if b.dest.AdvertizedRoutes == nil { // make a new one
+			b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
+			b.dest.AdvertizedRoutes.Prefixes = nlrislice
+		} else { // append them to the mp ones
+			b.dest.AdvertizedRoutes.Prefixes = append(b.dest.AdvertizedRoutes.Prefixes, nlrislice...)
+		}
 	}
 
 	return nil, nil
