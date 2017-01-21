@@ -51,12 +51,12 @@ type {{.typename}}RecordFiler interface {
 }
 
 type {{.typename}}RecordFile struct {
-	*FlatFootedRecordFile
+	*FlatRecordFile
 }
 
 func New{{.typename}}RecordFile(fname string) *{{.typename}}RecordFile {
 	return &{{.typename}}RecordFile{
-		NewFlatFootedRecordFile(fname),
+		NewFlatRecordFile(fname),
 	}
 }
 
