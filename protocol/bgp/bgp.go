@@ -3,6 +3,7 @@ package bgp
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
@@ -47,6 +48,93 @@ func NewBgpUpdateBuf(buf []byte, v6, as4 bool) *bgpUpdateBuf {
 		isv6:  v6,
 		isAS4: as4,
 	}
+}
+
+func (bgph *bgpHeaderBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(bgph.dest)
+}
+
+func (bgpup *bgpUpdateBuf) MarshalJSON() ([]byte, error) {
+
+	ret := "{"
+	if bgpup.dest.AdvertizedRoutes != nil {
+		adv, err := marshalPrefixArray(bgpup.dest.AdvertizedRoutes.Prefixes, "advertized_routes")
+		if err != nil {
+			return nil, err
+		}
+		ret += adv
+	}
+	if bgpup.dest.WithdrawnRoutes != nil {
+		wtd, err := marshalPrefixArray(bgpup.dest.WithdrawnRoutes.Prefixes, "withdrawn_routes")
+		if err != nil {
+			return nil, err
+		}
+		ret += ","
+		ret += wtd
+	}
+	ret += ",\"attrs\":"
+	if bgpup.dest.Attrs != nil {
+		attrs, err := json.Marshal(NewAttrsWrapper(bgpup.dest.Attrs))
+		if err != nil {
+			return nil, err
+		}
+		ret += string(attrs)
+	}
+	ret += "}"
+	return []byte(ret), nil
+}
+
+type AttrsWrapper struct {
+	*pbbgp.BGPUpdate_Attributes
+	NextHop    net.IP             `json:"next_hop,omitempty"`
+	Aggregator *AggregatorWrapper `json:"aggregator,omitempty"`
+}
+
+func NewAttrsWrapper(base *pbbgp.BGPUpdate_Attributes) *AttrsWrapper {
+	var nexthop net.IP
+	if base.NextHop != nil {
+		nexthop = net.IP(util.GetIP(base.NextHop))
+	}
+	return &AttrsWrapper{base, nexthop, NewAggregatorWrapper(base.Aggregator)}
+}
+
+type AggregatorWrapper struct {
+	*pbbgp.BGPUpdate_Aggregator
+	Ip net.IP `json:"ip,omitempty"`
+}
+
+func NewAggregatorWrapper(base *pbbgp.BGPUpdate_Aggregator) *AggregatorWrapper {
+	if base == nil {
+		return nil
+	}
+	ip := net.IP(util.GetIP(base.Ip))
+	return &AggregatorWrapper{base, ip}
+}
+
+func marshalPrefixArray(parray []*pbcom.PrefixWrapper, name string) (string, error) {
+	ret := "\"" + name + "\""
+	ret += ":[{"
+	for ind, route := range parray {
+		if ind != 0 {
+			ret += ","
+		}
+
+		ip, err := json.Marshal(net.IP(util.GetIP(route.Prefix)))
+		if err != nil {
+			return "", err
+		}
+		ret += string(ip)
+		ret += ":"
+		mask, err := json.Marshal(route.Mask)
+		if err != nil {
+			return "", err
+		}
+		ret += string(mask)
+		ret += "}"
+	}
+
+	ret += "]"
+	return ret, nil
 }
 
 func (b *bgpHeaderBuf) String() string {
