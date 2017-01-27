@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/bzip2"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/CSUNetSec/protoparse"
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
@@ -44,23 +45,17 @@ func getScanner(file *os.File) (scanner *bufio.Scanner) {
 }
 
 func main() {
-	argCt := len(os.Args)
-	if argCt < 2 {
+	isJson := flag.Bool("json", false, "print the output as json objects")
+
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) == 0 {
 		log.Println("mrt file not provided")
 		os.Exit(-1)
 	}
-	isJson := false
-	fileIndex := 1
-	if os.Args[1] == "-json" {
-		if argCt < 3 {
-			log.Println("mrt file not provided")
-			os.Exit(-1)
-		} else {
-			isJson = true
-			fileIndex = 2
-		}
-	}
-	mrtfd, err := os.Open(os.Args[fileIndex])
+
+	mrtfd, err := os.Open(args[0])
 	errx(err)
 	defer mrtfd.Close()
 	mrtScanner := getScanner(mrtfd)
@@ -75,7 +70,7 @@ func main() {
 		mrth := mrt.NewMrtHdrBuf(data)
 		bgp4h, bgph, bgpup := parseHeaders(mrth, numentries)
 
-		if isJson {
+		if *isJson {
 			mrthj, err := json.Marshal(mrth.GetHeader())
 			if err != nil {
 				log.Printf("Failed to marshal MRT header to json")
