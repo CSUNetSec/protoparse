@@ -55,33 +55,45 @@ func (bgph *bgpHeaderBuf) MarshalJSON() ([]byte, error) {
 }
 
 func (bgpup *bgpUpdateBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(NewUpdateWrapper(bgpup.dest))
+}
 
-	ret := "{"
-	if bgpup.dest.AdvertizedRoutes != nil {
-		adv, err := marshalPrefixArray(bgpup.dest.AdvertizedRoutes.Prefixes, "advertized_routes")
-		if err != nil {
-			return nil, err
+type UpdateWrapper struct {
+	AdvertizedRoutes []*PrefixWrapper `json:"advertized_routes,omitempty"`
+	WithdrawnRoutes  []*PrefixWrapper `json:"withdrawn_routes,omitempty"`
+	Attrs            *AttrsWrapper    `json:"attrs,omitempty"`
+}
+
+func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
+	ret := &UpdateWrapper{}
+	if update.AdvertizedRoutes != nil {
+		ret.AdvertizedRoutes = make([]*PrefixWrapper, len(update.AdvertizedRoutes.Prefixes))
+		for ind, prefix := range update.AdvertizedRoutes.Prefixes {
+			ret.AdvertizedRoutes[ind] = NewPrefixWrapper(prefix)
 		}
-		ret += adv
 	}
-	if bgpup.dest.WithdrawnRoutes != nil {
-		wtd, err := marshalPrefixArray(bgpup.dest.WithdrawnRoutes.Prefixes, "withdrawn_routes")
-		if err != nil {
-			return nil, err
+
+	if update.WithdrawnRoutes != nil {
+		ret.WithdrawnRoutes = make([]*PrefixWrapper, len(update.WithdrawnRoutes.Prefixes))
+		for ind, prefix := range update.WithdrawnRoutes.Prefixes {
+			ret.WithdrawnRoutes[ind] = NewPrefixWrapper(prefix)
 		}
-		ret += ","
-		ret += wtd
 	}
-	ret += ",\"attrs\":"
-	if bgpup.dest.Attrs != nil {
-		attrs, err := json.Marshal(NewAttrsWrapper(bgpup.dest.Attrs))
-		if err != nil {
-			return nil, err
-		}
-		ret += string(attrs)
+
+	if update.Attrs != nil {
+		ret.Attrs = NewAttrsWrapper(update.Attrs)
 	}
-	ret += "}"
-	return []byte(ret), nil
+
+	return ret
+}
+
+type PrefixWrapper struct {
+	Prefix net.IP `json:"prefix,omitempty"`
+	Mask   uint32 `json:"mask,omitempty"`
+}
+
+func NewPrefixWrapper(pw *pbcom.PrefixWrapper) *PrefixWrapper {
+	return &PrefixWrapper{net.IP(util.GetIP(pw.Prefix)), pw.Mask}
 }
 
 type AttrsWrapper struct {
@@ -109,32 +121,6 @@ func NewAggregatorWrapper(base *pbbgp.BGPUpdate_Aggregator) *AggregatorWrapper {
 	}
 	ip := net.IP(util.GetIP(base.Ip))
 	return &AggregatorWrapper{base, ip}
-}
-
-func marshalPrefixArray(parray []*pbcom.PrefixWrapper, name string) (string, error) {
-	ret := "\"" + name + "\""
-	ret += ":[{"
-	for ind, route := range parray {
-		if ind != 0 {
-			ret += ","
-		}
-
-		ip, err := json.Marshal(net.IP(util.GetIP(route.Prefix)))
-		if err != nil {
-			return "", err
-		}
-		ret += string(ip)
-		ret += ":"
-		mask, err := json.Marshal(route.Mask)
-		if err != nil {
-			return "", err
-		}
-		ret += string(mask)
-		ret += "}"
-	}
-
-	ret += "]"
-	return ret, nil
 }
 
 func (b *bgpHeaderBuf) String() string {
