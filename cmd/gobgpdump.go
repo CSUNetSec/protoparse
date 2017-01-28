@@ -69,31 +69,13 @@ func main() {
 		totsz += len(data)
 		mrth := mrt.NewMrtHdrBuf(data)
 		bgp4h, bgph, bgpup := parseHeaders(mrth, numentries)
-
+		mbs := &mrt.MrtBufferStack{mrth.GetHeader(), bgp4h, bgph, bgpup}
 		if *isJson {
-			mrthj, err := json.Marshal(mrth.GetHeader())
+			mbsj, err := json.Marshal(mbs)
 			if err != nil {
-				log.Printf("Failed to marshal MRT header to json")
+				log.Printf("Error marshaling to json")
 			}
-			bgp4hj, err := json.Marshal(bgp4h)
-			if err != nil {
-				log.Printf("Failed to marshal BGP4MP header to json")
-			}
-			bgphj, err := json.Marshal(bgph)
-			if err != nil {
-				log.Printf("Failed to marshal BGP header to json")
-			}
-			bgpupj, err := json.Marshal(bgpup)
-			if err != nil {
-				log.Printf("Failed to marshal BGP update to json")
-			}
-
-			ret += "{"
-			ret += string(mrthj)
-			ret += string(bgp4hj)
-			ret += string(bgphj)
-			ret += string(bgpupj)
-			ret += "}"
+			ret += string(mbsj)
 		} else {
 			ret += fmt.Sprintf("[%d] MRT Header: %s\n", numentries, mrth)
 			ret += fmt.Sprintf("BGP4MP Header:%s\n", bgp4h)
