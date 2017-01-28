@@ -24,6 +24,13 @@ const (
 	MESSAGE_AS4_LOCAL = 7
 )
 
+type MrtBufferStack struct {
+	MrthBuf   *pbbgp.MrtHeader `json:"mrt_header,omitempty"`
+	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
+	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
+	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
+}
+
 type mrtHhdrBuf struct {
 	dest *pbbgp.MrtHeader
 	buf  []byte
