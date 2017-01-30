@@ -2,6 +2,7 @@ package mrt
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
@@ -22,6 +23,13 @@ const (
 	MESSAGE_LOCAL     = 7
 	MESSAGE_AS4_LOCAL = 7
 )
+
+type MrtBufferStack struct {
+	MrthBuf   *pbbgp.MrtHeader `json:"mrt_header,omitempty"`
+	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
+	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
+	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
+}
 
 type mrtHhdrBuf struct {
 	dest *pbbgp.MrtHeader
@@ -151,4 +159,20 @@ func (m *mrtHhdrBuf) GetHeader() *pbbgp.MrtHeader {
 
 func (m *bgp4mpHdrBuf) GetHeader() *pbbgp.BGP4MPHeader {
 	return m.dest
+}
+
+type bgp4mpHeaderWrapper struct {
+	*pbbgp.BGP4MPHeader
+	PeerIp  net.IP `json:"peer_ip,omitempty"`
+	LocalIp net.IP `json:"local_ip,omitempty"`
+}
+
+func NewBGP4MPHeaderWrapper(dest *pbbgp.BGP4MPHeader) *bgp4mpHeaderWrapper {
+	peer := net.IP(util.GetIP(dest.PeerIp))
+	local := net.IP(util.GetIP(dest.LocalIp))
+	return &bgp4mpHeaderWrapper{dest, peer, local}
+}
+
+func (m *bgp4mpHdrBuf) MarshalJSON() (data []byte, err error) {
+	return json.Marshal(NewBGP4MPHeaderWrapper(m.dest))
 }

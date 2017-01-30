@@ -3,6 +3,7 @@ package bgp
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
@@ -47,6 +48,79 @@ func NewBgpUpdateBuf(buf []byte, v6, as4 bool) *bgpUpdateBuf {
 		isv6:  v6,
 		isAS4: as4,
 	}
+}
+
+func (bgph *bgpHeaderBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(bgph.dest)
+}
+
+func (bgpup *bgpUpdateBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(NewUpdateWrapper(bgpup.dest))
+}
+
+type UpdateWrapper struct {
+	AdvertizedRoutes []*PrefixWrapper `json:"advertized_routes,omitempty"`
+	WithdrawnRoutes  []*PrefixWrapper `json:"withdrawn_routes,omitempty"`
+	Attrs            *AttrsWrapper    `json:"attrs,omitempty"`
+}
+
+func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
+	ret := &UpdateWrapper{}
+	if update.AdvertizedRoutes != nil {
+		ret.AdvertizedRoutes = make([]*PrefixWrapper, len(update.AdvertizedRoutes.Prefixes))
+		for ind, prefix := range update.AdvertizedRoutes.Prefixes {
+			ret.AdvertizedRoutes[ind] = NewPrefixWrapper(prefix)
+		}
+	}
+
+	if update.WithdrawnRoutes != nil {
+		ret.WithdrawnRoutes = make([]*PrefixWrapper, len(update.WithdrawnRoutes.Prefixes))
+		for ind, prefix := range update.WithdrawnRoutes.Prefixes {
+			ret.WithdrawnRoutes[ind] = NewPrefixWrapper(prefix)
+		}
+	}
+
+	if update.Attrs != nil {
+		ret.Attrs = NewAttrsWrapper(update.Attrs)
+	}
+
+	return ret
+}
+
+type PrefixWrapper struct {
+	Prefix net.IP `json:"prefix,omitempty"`
+	Mask   uint32 `json:"mask,omitempty"`
+}
+
+func NewPrefixWrapper(pw *pbcom.PrefixWrapper) *PrefixWrapper {
+	return &PrefixWrapper{net.IP(util.GetIP(pw.Prefix)), pw.Mask}
+}
+
+type AttrsWrapper struct {
+	*pbbgp.BGPUpdate_Attributes
+	NextHop    net.IP             `json:"next_hop,omitempty"`
+	Aggregator *AggregatorWrapper `json:"aggregator,omitempty"`
+}
+
+func NewAttrsWrapper(base *pbbgp.BGPUpdate_Attributes) *AttrsWrapper {
+	var nexthop net.IP
+	if base.NextHop != nil {
+		nexthop = net.IP(util.GetIP(base.NextHop))
+	}
+	return &AttrsWrapper{base, nexthop, NewAggregatorWrapper(base.Aggregator)}
+}
+
+type AggregatorWrapper struct {
+	*pbbgp.BGPUpdate_Aggregator
+	Ip net.IP `json:"ip,omitempty"`
+}
+
+func NewAggregatorWrapper(base *pbbgp.BGPUpdate_Aggregator) *AggregatorWrapper {
+	if base == nil {
+		return nil
+	}
+	ip := net.IP(util.GetIP(base.Ip))
+	return &AggregatorWrapper{base, ip}
 }
 
 func (b *bgpHeaderBuf) String() string {
