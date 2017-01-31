@@ -69,7 +69,7 @@ func main() {
 		totsz += len(data)
 		mrth := mrt.NewMrtHdrBuf(data)
 		bgp4h, bgph, bgpup := parseHeaders(mrth, numentries)
-		mbs := &mrt.MrtBufferStack{mrth.GetHeader(), bgp4h, bgph, bgpup}
+		mbs := &mrt.MrtBufferStack{mrth, bgp4h, bgph, bgpup}
 		if *isJson {
 			mbsj, err := json.Marshal(mbs)
 			if err != nil {
