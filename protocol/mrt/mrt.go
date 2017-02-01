@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	monpb "github.com/CSUNetSec/netsec-protobufs/bgpmon"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
+	pp "github.com/CSUNetSec/protoparse"
 	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
 	util "github.com/CSUNetSec/protoparse/util"
 	"net"
@@ -29,6 +31,38 @@ type MrtBufferStack struct {
 	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
 	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
 	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
+}
+
+func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
+	mrth := NewMrtHdrBuf(data)
+	bgp4h, errmrt := mrth.Parse()
+	if errmrt != nil {
+		return nil, fmt.Errorf("Failed parsing MRT header:%s\n", errmrt)
+	}
+	bgph, errbgph := bgp4h.Parse()
+	if errbgph != nil {
+		return nil, fmt.Errorf("Failed parsing BGP4MP header:%s\n", errbgph)
+	}
+	bgpup, errbgpup := bgph.Parse()
+	if errbgpup != nil {
+		return nil, fmt.Errorf("Failed parsing BGP Header:%s\n", errbgpup)
+	}
+	_, errup := bgpup.Parse()
+	if errup != nil {
+		return nil, fmt.Errorf("Failed parsing BGP Update:%s\n", errup)
+	}
+	capture := new(monpb.BGPCapture)
+	bgphpb := bgp4h.(pp.BGP4MPHeaderer).GetHeader()
+	mrtpb := mrth.GetHeader()
+	capture.Timestamp = mrtpb.Timestamp
+	capture.PeerAs = bgphpb.PeerAs
+	capture.LocalAs = bgphpb.LocalAs
+	capture.InterfaceIndex = bgphpb.InterfaceIndex
+	capture.AddressFamily = bgphpb.AddressFamily
+	capture.PeerIp = bgphpb.PeerIp
+	capture.LocalIp = bgphpb.LocalIp
+	capture.Update = bgpup.(pp.BGPUpdater).GetUpdate()
+	return capture, nil
 }
 
 type mrtHhdrBuf struct {

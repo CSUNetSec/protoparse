@@ -1,10 +1,10 @@
 package util
 
 import (
-	"github.com/CSUNetSec/netsec-protobufs/common"
+	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 )
 
-func GetIP(a *common.IPAddressWrapper) []byte {
+func GetIP(a *pbcom.IPAddressWrapper) []byte {
 	if a.Ipv4 != nil {
 		return a.Ipv4
 	} else if a.Ipv6 != nil {
