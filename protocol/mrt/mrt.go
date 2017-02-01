@@ -27,7 +27,7 @@ const (
 )
 
 type MrtBufferStack struct {
-	MrthBuf   *pbbgp.MrtHeader `json:"mrt_header,omitempty"`
+	MrthBuf   protoparse.PbVal `json:"mrt_header,omitempty"`
 	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
 	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
 	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
@@ -199,6 +199,20 @@ type bgp4mpHeaderWrapper struct {
 	*pbbgp.BGP4MPHeader
 	PeerIp  net.IP `json:"peer_ip,omitempty"`
 	LocalIp net.IP `json:"local_ip,omitempty"`
+}
+
+type mrtHeaderWrapper struct {
+	*pbbgp.MrtHeader
+	Timestamp time.Time `json:"timestamp,omitempty"`
+}
+
+func NewMrtHeaderWrapper(m *mrtHhdrBuf) *mrtHeaderWrapper {
+	header := m.dest
+	return &mrtHeaderWrapper{header, time.Unix(int64(header.Timestamp), 0)}
+}
+
+func (mth *mrtHhdrBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(NewMrtHeaderWrapper(mth))
 }
 
 func NewBGP4MPHeaderWrapper(dest *pbbgp.BGP4MPHeader) *bgp4mpHeaderWrapper {
