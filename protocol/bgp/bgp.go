@@ -211,7 +211,7 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 		buf = buf[1:]
 		bytelen := (bitlen + 7) / 8
 		if int(bytelen) > len(buf) {
-			fmt.Printf("error in readPrefix. bytelen requested is more than length of buffer")
+			fmt.Printf("error in readPrefix [v6:%v].bytelen %d requested is more than length of buffer %d\n", v6, bytelen, len(buf))
 			return wpslice
 		}
 		//fmt.Println("bitlen: ", bitlen, "bytelen ", bytelen)
@@ -506,6 +506,7 @@ readattr:
 		snpanum := uint8(buf[0]) //number of SNPAs
 		buf = buf[1:]
 		totskip += 1
+		//they are now deprecated at the latest rfc (....)
 		if snpanum > 0 { //XXX jump over them for now
 			innerskip, snpal := 0, uint8(0)
 			for i := 0; i < int(snpanum); i++ {

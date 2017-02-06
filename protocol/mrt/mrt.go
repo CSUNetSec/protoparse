@@ -24,6 +24,8 @@ const (
 	MESSAGE_AS4       = 4
 	MESSAGE_LOCAL     = 7
 	MESSAGE_AS4_LOCAL = 7
+	TABLE_DUMP        = 12
+	TABLE_DUMP_V2     = 13
 )
 
 type MrtBufferStack struct {
@@ -66,8 +68,9 @@ func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
 }
 
 type mrtHhdrBuf struct {
-	dest *pbbgp.MrtHeader
-	buf  []byte
+	dest  *pbbgp.MrtHeader
+	buf   []byte
+	isrib bool
 }
 
 type bgp4mpHdrBuf struct {
@@ -77,10 +80,17 @@ type bgp4mpHdrBuf struct {
 	isAS4 bool
 }
 
+type ribBuf struct {
+	buf   []byte
+	isv6  bool
+	isAS4 bool
+}
+
 func NewMrtHdrBuf(buf []byte) *mrtHhdrBuf {
 	return &mrtHhdrBuf{
-		dest: new(pbbgp.MrtHeader),
-		buf:  buf,
+		dest:  new(pbbgp.MrtHeader),
+		buf:   buf,
+		isrib: false,
 	}
 }
 
@@ -93,6 +103,13 @@ func NewBgp4mpHdrBuf(buf []byte, as4 bool) *bgp4mpHdrBuf {
 	}
 }
 
+func NewRibBuf(buf []byte, as4 bool) *ribBuf {
+	return &ribBuf{
+		buf:   buf,
+		isAS4: as4,
+	}
+}
+
 func (m *mrtHhdrBuf) String() string {
 	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0), m.dest.Type, m.dest.Subtype, m.dest.Len)
 }
@@ -100,6 +117,25 @@ func (m *mrtHhdrBuf) String() string {
 func (m *bgp4mpHdrBuf) String() string {
 	formatstr := "peer_as:%d local_as:%d interface_index:%d address_family:%d peer_ip:%s local_ip:%s"
 	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(util.GetIP(m.dest.PeerIp)), net.IP(util.GetIP(m.dest.LocalIp)))
+}
+
+func (r *ribBuf) String() string {
+	return "RIB"
+}
+
+func (r *ribBuf) Parse() (protoparse.PbVal, error) {
+	return nil, nil
+}
+
+func IsRib(a []byte) (bool, error) {
+	if len(a) < MRT_HEADER_LEN {
+		return false, errors.New("Not enough bytes in data slice to decode MRT header")
+	}
+	u16subtype := binary.BigEndian.Uint16(a[6:8])
+	if u16subtype == uint16(TABLE_DUMP) || u16subtype == uint16(TABLE_DUMP_V2) {
+		return true, nil
+	}
+	return false, nil
 }
 
 func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
@@ -115,7 +151,8 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	if len(mhb.buf[MRT_HEADER_LEN:]) < int(mhb.dest.Len) {
 		return nil, fmt.Errorf("Not enough bytes in data slice for underlying message.len of buf:%d len parsed:%d", len(mhb.buf[MRT_HEADER_LEN:]), mhb.dest.Len)
 	}
-	if u16type == uint16(BGP4MP) || u16type == uint16(BGP4MP_ET) {
+	switch u16type {
+	case uint16(BGP4MP), uint16(BGP4MP_ET):
 		if u16subtype == MESSAGE_AS4 || u16subtype == MESSAGE_AS4_LOCAL {
 			return NewBgp4mpHdrBuf(mhb.buf[MRT_HEADER_LEN:], true), nil
 		}
@@ -123,6 +160,13 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 			return NewBgp4mpHdrBuf(mhb.buf[MRT_HEADER_LEN:], false), nil
 		}
 		return nil, errors.New("unsupported MRT subtype")
+	//XXX: when we start to parse deeper we should remove the MRT header
+	case uint16(TABLE_DUMP):
+		mhb.isrib = true
+		return NewRibBuf(mhb.buf, false), nil
+	case uint16(TABLE_DUMP_V2):
+		mhb.isrib = true
+		return NewRibBuf(mhb.buf, true), nil
 	}
 	return nil, errors.New("unsupported MRT type")
 }
