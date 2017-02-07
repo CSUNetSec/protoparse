@@ -131,8 +131,8 @@ func IsRib(a []byte) (bool, error) {
 	if len(a) < MRT_HEADER_LEN {
 		return false, errors.New("Not enough bytes in data slice to decode MRT header")
 	}
-	u16subtype := binary.BigEndian.Uint16(a[6:8])
-	if u16subtype == uint16(TABLE_DUMP) || u16subtype == uint16(TABLE_DUMP_V2) {
+	u16type := binary.BigEndian.Uint16(a[4:6])
+	if u16type == uint16(TABLE_DUMP) || u16type == uint16(TABLE_DUMP_V2) {
 		return true, nil
 	}
 	return false, nil
