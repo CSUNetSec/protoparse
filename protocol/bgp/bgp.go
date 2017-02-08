@@ -210,7 +210,7 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 		bitlen := uint8(buf[0])
 		buf = buf[1:]
 		bytelen := (bitlen + 7) / 8
-		if int(bytelen) > len(buf) {
+		if int(bytelen) > len(buf) || int(bytelen) < 1 {
 			fmt.Printf("error in readPrefix [v6:%v].bytelen %d requested is more than length of buffer %d\n", v6, bytelen, len(buf))
 			return wpslice
 		}
