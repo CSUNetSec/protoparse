@@ -252,7 +252,7 @@ type mrtHeaderWrapper struct {
 
 func NewMrtHeaderWrapper(m *mrtHhdrBuf) *mrtHeaderWrapper {
 	header := m.dest
-	return &mrtHeaderWrapper{header, time.Unix(int64(header.Timestamp), 0)}
+	return &mrtHeaderWrapper{header, time.Unix(int64(header.Timestamp), 0).UTC()}
 }
 
 func (mth *mrtHhdrBuf) MarshalJSON() ([]byte, error) {
