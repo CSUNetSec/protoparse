@@ -111,7 +111,7 @@ func NewRibBuf(buf []byte, as4 bool) *ribBuf {
 }
 
 func (m *mrtHhdrBuf) String() string {
-	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0), m.dest.Type, m.dest.Subtype, m.dest.Len)
+	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0).UTC(), m.dest.Type, m.dest.Subtype, m.dest.Len)
 }
 
 func (m *bgp4mpHdrBuf) String() string {
