@@ -111,7 +111,7 @@ func NewRibBuf(buf []byte, as4 bool) *ribBuf {
 }
 
 func (m *mrtHhdrBuf) String() string {
-	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0), m.dest.Type, m.dest.Subtype, m.dest.Len)
+	return fmt.Sprintf("Timestamp:%v Type:%d Subtype:%d Len:%d", time.Unix(int64(m.dest.Timestamp), 0).UTC(), m.dest.Type, m.dest.Subtype, m.dest.Len)
 }
 
 func (m *bgp4mpHdrBuf) String() string {
@@ -131,8 +131,8 @@ func IsRib(a []byte) (bool, error) {
 	if len(a) < MRT_HEADER_LEN {
 		return false, errors.New("Not enough bytes in data slice to decode MRT header")
 	}
-	u16subtype := binary.BigEndian.Uint16(a[6:8])
-	if u16subtype == uint16(TABLE_DUMP) || u16subtype == uint16(TABLE_DUMP_V2) {
+	u16type := binary.BigEndian.Uint16(a[4:6])
+	if u16type == uint16(TABLE_DUMP) || u16type == uint16(TABLE_DUMP_V2) {
 		return true, nil
 	}
 	return false, nil
@@ -252,7 +252,7 @@ type mrtHeaderWrapper struct {
 
 func NewMrtHeaderWrapper(m *mrtHhdrBuf) *mrtHeaderWrapper {
 	header := m.dest
-	return &mrtHeaderWrapper{header, time.Unix(int64(header.Timestamp), 0)}
+	return &mrtHeaderWrapper{header, time.Unix(int64(header.Timestamp), 0).UTC()}
 }
 
 func (mth *mrtHhdrBuf) MarshalJSON() ([]byte, error) {

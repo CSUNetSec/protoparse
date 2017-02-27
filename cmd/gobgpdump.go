@@ -68,7 +68,10 @@ func main() {
 		data := mrtScanner.Bytes()
 		totsz += len(data)
 		mrth := mrt.NewMrtHdrBuf(data)
-		bgp4h, bgph, bgpup := parseHeaders(mrth, numentries)
+		bgp4h, bgph, bgpup, err := parseHeaders(mrth, numentries)
+		if err != nil {
+			fmt.Printf("Error parsing header: %v\n", err)
+		}
 		mbs := &mrt.MrtBufferStack{mrth, bgp4h, bgph, bgpup}
 		if *isJson {
 			mbsj, err := json.Marshal(mbs)
@@ -92,25 +95,29 @@ func main() {
 	log.Printf("Scanned: %d entries, total size: %d bytes in %v\n", numentries, totsz, dt)
 }
 
-func parseHeaders(mrth protoparse.PbVal, entryCt int) (bgp4h, bgph, bgpup protoparse.PbVal) {
-	bgp4h, err := mrth.Parse()
+func parseHeaders(mrth protoparse.PbVal, entryCt int) (bgp4h, bgph, bgpup protoparse.PbVal, err error) {
+	bgp4h, err = mrth.Parse()
 	if err != nil {
 		log.Printf("Failed parsing MRT header %d :%s", entryCt, err)
+		return
 	}
 
 	bgph, err = bgp4h.Parse()
 	if err != nil {
 		log.Printf("Failed parsing BG4MP header %d :%s", entryCt, err)
+		return
 	}
 
 	bgpup, err = bgph.Parse()
 	if err != nil {
 		log.Printf("Failed parsing BGP header %d :%s", entryCt, err)
+		return
 	}
 
 	_, err = bgpup.Parse()
 	if err != nil {
 		log.Printf("Failed parsing BGP update %d :%s", entryCt, err)
+		return
 	}
 
 	return
