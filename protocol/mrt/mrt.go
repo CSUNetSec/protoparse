@@ -220,8 +220,8 @@ func SplitMrt(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if cap(data) < MRT_HEADER_LEN { // read more
 		return 0, nil, nil
 	}
-	if dataLen < MRT_HEADER_LEN {
-		return 0, nil, errors.New("Data slice shorter than MRT header")
+	if dataLen < MRT_HEADER_LEN { //read more
+		return 0, nil, nil
 	}
 	totlen := int(binary.BigEndian.Uint32(data[8:12])) + MRT_HEADER_LEN
 
