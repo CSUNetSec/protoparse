@@ -70,7 +70,8 @@ func main() {
 		mrth := mrt.NewMrtHdrBuf(data)
 		bgp4h, bgph, bgpup, err := parseHeaders(mrth, numentries)
 		if err != nil {
-			fmt.Printf("Error parsing header: %v\n", err)
+			fmt.Printf("[%d] Error:%s\n", numentries, err)
+			continue
 		}
 		mbs := &mrt.MrtBufferStack{mrth, bgp4h, bgph, bgpup}
 		if *isJson {
