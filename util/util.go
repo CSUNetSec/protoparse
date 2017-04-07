@@ -1,6 +1,8 @@
 package util
 
 import (
+	"bytes"
+	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 )
 
@@ -11,4 +13,12 @@ func GetIP(a *pbcom.IPAddressWrapper) []byte {
 		return a.Ipv6
 	}
 	return nil
+}
+
+func IpToRadixkey(b []byte, mask uint8) string {
+	var buffer bytes.Buffer
+	for i := 0; i < len(b) && i < int(mask); i++ {
+		buffer.WriteString(fmt.Sprintf("%08b", b[i]))
+	}
+	return buffer.String()[:mask]
 }
