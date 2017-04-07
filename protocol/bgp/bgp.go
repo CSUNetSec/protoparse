@@ -10,6 +10,7 @@ import (
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
 	"github.com/CSUNetSec/protoparse/util"
+	"log"
 	"net"
 )
 
@@ -211,7 +212,7 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 		buf = buf[1:]
 		bytelen := (bitlen + 7) / 8
 		if int(bytelen) > len(buf) || int(bytelen) < 1 {
-			fmt.Printf("error in readPrefix [v6:%v].bytelen %d requested is more than length of buffer %d\n", v6, bytelen, len(buf))
+			log.Printf("error in readPrefix [v6:%v].bytelen %d requested is more than length of buffer %d\n", v6, bytelen, len(buf))
 			return wpslice
 		}
 		//fmt.Println("bitlen: ", bitlen, "bytelen ", bytelen)
