@@ -9,11 +9,13 @@ import (
 	"github.com/CSUNetSec/protoparse"
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
 	util "github.com/CSUNetSec/protoparse/util"
+	radix "github.com/armon/go-radix"
 	"io"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -47,13 +49,15 @@ func getScanner(file *os.File) (scanner *bufio.Scanner) {
 }
 
 var (
-	pup    bool
-	isJson bool
-	destAs int
-	srcAs  int
+	pup      bool
+	isJson   bool
+	destAs   int
+	srcAs    int
+	parallel bool
 )
 
 func init() {
+	flag.BoolVar(&parallel, "p", false, "dump files in parallel, may cause out of order output")
 	flag.BoolVar(&pup, "pup", false, "print every advertized prefix only once")
 	flag.BoolVar(&isJson, "json", false, "print the output as json objects")
 	flag.IntVar(&destAs, "destAs", -1, "filter by this destination AS")
@@ -68,14 +72,15 @@ func main() {
 		log.Println("mrt file not provided")
 		os.Exit(-1)
 	}
+	log.Printf("Dumping %d files\n", len(args))
 	var tf transformer
 	if isJson {
-		tf = jsontransformer
+		tf = jsonTransformer{}
 	} else if pup {
 		upm := NewUniquePrefixMap()
-		tf = upm.upmtransformer
+		tf = upm
 	} else {
-		tf = texttransformer
+		tf = textTransformer{}
 	}
 	var vals []validator
 	if destAs != -1 {
@@ -87,7 +92,33 @@ func main() {
 		vals = append(vals, av.validateSrc)
 	}
 
-	mrtfd, err := os.Open(args[0])
+	wg := &sync.WaitGroup{}
+	start := time.Now()
+	// Each goroutine requires an fd,
+	// I should consider adding a struct to
+	// manage the number of fds consumed by the program
+	for _, name := range args {
+		if parallel && false {
+			wg.Add(1)
+			go dumpFile(name, tf, vals, wg)
+		} else {
+			dumpFile(name, tf, vals, nil)
+		}
+	}
+
+	if parallel {
+		wg.Wait()
+	}
+	tf.summarize()
+	log.Printf("Total time taken: %s\n", time.Since(start))
+
+}
+
+func dumpFile(fName string, tf transformer, vals []validator, wg *sync.WaitGroup) {
+	if wg != nil {
+		defer wg.Done()
+	}
+	mrtfd, err := os.Open(fName)
 	errx(err)
 	defer mrtfd.Close()
 
@@ -105,13 +136,13 @@ func main() {
 		mrth := mrt.NewMrtHdrBuf(data)
 		bgp4h, bgph, bgpup, err := parseHeaders(mrth, numentries)
 		if err != nil {
-			fmt.Printf("[%d] Error:%s\n", numentries, err)
+			log.Printf("[%d] Error:%s\n", numentries, err)
 			break
 		}
 		mbs := &mrt.MrtBufferStack{mrth, bgp4h, bgph, bgpup}
 		if validateAll(vals, mbs) {
 			unfilteredct++
-			ret += tf(numentries, mbs)
+			ret += tf.transform(numentries, mbs)
 			// I'm making transformers responsible for newlines, because
 			// the upm doesn't need them
 			fmt.Printf("%s", ret)
@@ -122,7 +153,8 @@ func main() {
 		errx(err, mrtfd)
 	}
 	dt := time.Since(t1)
-	log.Printf("Scanned: %d entries, %d passed filters, total size: %d bytes in %v\n", numentries, unfilteredct, totsz, dt)
+	log.Printf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
+
 }
 
 func validateAll(vals []validator, mbs *mrt.MrtBufferStack) bool {
@@ -136,6 +168,31 @@ func validateAll(vals []validator, mbs *mrt.MrtBufferStack) bool {
 
 // This could maybe not be a pointer
 type validator func(*mrt.MrtBufferStack) bool
+
+type TimeValidator struct {
+	start    time.Time
+	duration time.Duration
+}
+
+func TVFromStart(st time.Time, d time.Duration) *TimeValidator {
+	tv := TimeValidator{st, d}
+	return &tv
+}
+
+func TVFromNow(d time.Duration) *TimeValidator {
+	return TVFromStart(time.Now().Add(-d), d)
+}
+
+func (tv *TimeValidator) validateTime(mbs *mrt.MrtBufferStack) bool {
+	hdr := mbs.MrthBuf.(protoparse.MRTHeaderer).GetHeader()
+	if hdr == nil {
+		return false
+	}
+
+	timestamp := time.Unix(int64(hdr.Timestamp), 0)
+
+	return timestamp.After(tv.start) && timestamp.Before(tv.start.Add(tv.duration))
+}
 
 type AsValidator struct {
 	as uint32
@@ -204,19 +261,30 @@ func (asval *AsValidator) validateDest(mbs *mrt.MrtBufferStack) bool {
 
 }
 
-type transformer func(int, *mrt.MrtBufferStack) string
+type transformer interface {
+	transform(int, *mrt.MrtBufferStack) string
+	summarize()
+}
 
 type UniquePrefixMap struct {
-	prefixes map[string]bool
+	prefixes  map[string]bool
+	radixTree *radix.Tree
+	maplock   *sync.Mutex
 }
 
 func NewUniquePrefixMap() *UniquePrefixMap {
 	upm := UniquePrefixMap{}
 	upm.prefixes = make(map[string]bool)
+	upm.radixTree = radix.New()
+	upm.maplock = &sync.Mutex{}
 	return &upm
 }
 
-func (upm *UniquePrefixMap) upmtransformer(msgNum int, mbs *mrt.MrtBufferStack) string {
+type IPWrapper struct {
+	ip string
+}
+
+func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 	update := mbs.Bgpupbuf.(protoparse.BGPUpdater).GetUpdate()
 
 	//If there are no advertized routes
@@ -224,20 +292,42 @@ func (upm *UniquePrefixMap) upmtransformer(msgNum int, mbs *mrt.MrtBufferStack) 
 		return ""
 	}
 
-	ret := ""
 	for _, ar := range update.AdvertizedRoutes.Prefixes {
 		ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
+		upm.maplock.Lock()
 		if !upm.prefixes[ipstr] {
-			ret += ipstr + "\n"
+			rkey := util.IpToRadixkey(util.GetIP(ar.GetPrefix()), uint8(ar.Mask))
+			upm.radixTree.Insert(rkey, IPWrapper{ipstr})
 			upm.prefixes[ipstr] = true
 		}
+		upm.maplock.Unlock()
 	}
 
-	return ret
+	return ""
 
 }
 
-func jsontransformer(msgNum int, mbs *mrt.MrtBufferStack) string {
+func (upm *UniquePrefixMap) summarize() {
+	upm.radixTree.Walk(upm.topWalk)
+}
+
+func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
+	pref := v.(IPWrapper).ip
+	if upm.prefixes[pref] {
+		fmt.Printf("%s\n", pref)
+		upm.radixTree.WalkPrefix(s, upm.subWalk)
+	}
+	return false
+}
+
+func (upm *UniquePrefixMap) subWalk(s string, v interface{}) bool {
+	upm.prefixes[v.(IPWrapper).ip] = false
+	return false
+}
+
+type jsonTransformer struct{}
+
+func (j jsonTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 	mbsj, err := json.Marshal(mbs)
 	if err != nil {
 		log.Printf("Error marshaling to json")
@@ -246,7 +336,11 @@ func jsontransformer(msgNum int, mbs *mrt.MrtBufferStack) string {
 	return string(mbsj) + "\n"
 }
 
-func texttransformer(msgNum int, mbs *mrt.MrtBufferStack) string {
+func (j jsonTransformer) summarize() {}
+
+type textTransformer struct{}
+
+func (t textTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 	ret := ""
 	ret += fmt.Sprintf("[%d] MRT Header: %s\n", msgNum, mbs.MrthBuf)
 	ret += fmt.Sprintf("BGP4MP Header:%s\n", mbs.Bgp4mpbuf)
@@ -254,6 +348,8 @@ func texttransformer(msgNum int, mbs *mrt.MrtBufferStack) string {
 	ret += fmt.Sprintf("BGP Update:%s\n", mbs.Bgpupbuf)
 	return ret + "\n"
 }
+
+func (t textTransformer) summarize() {}
 
 func parseHeaders(mrth protoparse.PbVal, entryCt int) (bgp4h, bgph, bgpup protoparse.PbVal, err error) {
 	bgp4h, err = mrth.Parse()
