@@ -20,5 +20,9 @@ func IpToRadixkey(b []byte, mask uint8) string {
 	for i := 0; i < len(b) && i < int(mask); i++ {
 		buffer.WriteString(fmt.Sprintf("%08b", b[i]))
 	}
-	return buffer.String()[:mask]
+	str := buffer.String()
+	if len(str) < int(mask) {
+		return str
+	}
+	return str[:mask]
 }
