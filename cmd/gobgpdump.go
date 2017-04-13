@@ -49,14 +49,20 @@ func getScanner(file *os.File) (scanner *bufio.Scanner) {
 }
 
 var (
+	logout   string
+	dumpout  string
+	statout  string
 	pup      bool
 	isJson   bool
+	parallel bool
 	destAs   int
 	srcAs    int
-	parallel bool
 )
 
 func init() {
+	flag.StringVar(&logout, "lo", "stdout", "file to dump log output")
+	flag.StringVar(&dumpout, "o", "stdout", "file to dump entries")
+	flag.StringVar(&statout, "so", "stdout", "file to dump statistics output")
 	flag.BoolVar(&parallel, "p", false, "dump files in parallel, may cause out of order output")
 	flag.BoolVar(&pup, "pup", false, "print every advertized prefix only once")
 	flag.BoolVar(&isJson, "json", false, "print the output as json objects")
@@ -72,7 +78,32 @@ func main() {
 		log.Println("mrt file not provided")
 		os.Exit(-1)
 	}
-	log.Printf("Dumping %d files\n", len(args))
+
+	if logout != "stdout" {
+		lfd, _ := os.Create(logout)
+		log.SetOutput(lfd)
+		defer lfd.Close()
+	}
+	var statfd *os.File
+	var dumpfd *os.File
+
+	if statout != "stdout" {
+		statfd, _ = os.Create(statout)
+		defer statfd.Close()
+	} else {
+		statfd = os.Stdout
+	}
+
+	if dumpout != "stdout" {
+		dumpfd, _ = os.Create(dumpout)
+		defer dumpfd.Close()
+	} else {
+		dumpfd = os.Stdout
+	}
+
+	statstr := fmt.SPrintf("Dumping %d files\n", len(args))
+	statfd.WriteString(statstr)
+
 	var tf transformer
 	if isJson {
 		tf = jsonTransformer{}
@@ -111,10 +142,9 @@ func main() {
 	}
 	tf.summarize()
 	log.Printf("Total time taken: %s\n", time.Since(start))
-
 }
 
-func dumpFile(fName string, tf transformer, vals []validator, wg *sync.WaitGroup) {
+func dumpFile(fName string, tf transformer, vals []validator, dfd, sfd *os.File, wg *sync.WaitGroup) {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -145,7 +175,7 @@ func dumpFile(fName string, tf transformer, vals []validator, wg *sync.WaitGroup
 			ret += tf.transform(numentries, mbs)
 			// I'm making transformers responsible for newlines, because
 			// the upm doesn't need them
-			fmt.Printf("%s", ret)
+			dfd.WriteString(ret)
 		}
 	}
 
@@ -153,7 +183,8 @@ func dumpFile(fName string, tf transformer, vals []validator, wg *sync.WaitGroup
 		errx(err, mrtfd)
 	}
 	dt := time.Since(t1)
-	log.Printf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
+	statstr := fmt.SPrintf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
+	sfd.WriteString(statstr)
 
 }
 
@@ -168,31 +199,6 @@ func validateAll(vals []validator, mbs *mrt.MrtBufferStack) bool {
 
 // This could maybe not be a pointer
 type validator func(*mrt.MrtBufferStack) bool
-
-type TimeValidator struct {
-	start    time.Time
-	duration time.Duration
-}
-
-func TVFromStart(st time.Time, d time.Duration) *TimeValidator {
-	tv := TimeValidator{st, d}
-	return &tv
-}
-
-func TVFromNow(d time.Duration) *TimeValidator {
-	return TVFromStart(time.Now().Add(-d), d)
-}
-
-func (tv *TimeValidator) validateTime(mbs *mrt.MrtBufferStack) bool {
-	hdr := mbs.MrthBuf.(protoparse.MRTHeaderer).GetHeader()
-	if hdr == nil {
-		return false
-	}
-
-	timestamp := time.Unix(int64(hdr.Timestamp), 0)
-
-	return timestamp.After(tv.start) && timestamp.Before(tv.start.Add(tv.duration))
-}
 
 type AsValidator struct {
 	as uint32
