@@ -101,14 +101,14 @@ func main() {
 		dumpfd = os.Stdout
 	}
 
-	statstr := fmt.SPrintf("Dumping %d files\n", len(args))
+	statstr := fmt.Sprintf("Dumping %d files\n", len(args))
 	statfd.WriteString(statstr)
 
 	var tf transformer
 	if isJson {
 		tf = jsonTransformer{}
 	} else if pup {
-		upm := NewUniquePrefixMap()
+		upm := NewUniquePrefixMap(dumpfd)
 		tf = upm
 	} else {
 		tf = textTransformer{}
@@ -131,9 +131,9 @@ func main() {
 	for _, name := range args {
 		if parallel && false {
 			wg.Add(1)
-			go dumpFile(name, tf, vals, wg)
+			go dumpFile(name, tf, vals, dumpfd, statfd, wg)
 		} else {
-			dumpFile(name, tf, vals, nil)
+			dumpFile(name, tf, vals, dumpfd, statfd, nil)
 		}
 	}
 
@@ -141,7 +141,8 @@ func main() {
 		wg.Wait()
 	}
 	tf.summarize()
-	log.Printf("Total time taken: %s\n", time.Since(start))
+	str := fmt.Sprintf("Total time taken: %s\n", time.Since(start))
+	statfd.WriteString(str)
 }
 
 func dumpFile(fName string, tf transformer, vals []validator, dfd, sfd *os.File, wg *sync.WaitGroup) {
@@ -183,7 +184,7 @@ func dumpFile(fName string, tf transformer, vals []validator, dfd, sfd *os.File,
 		errx(err, mrtfd)
 	}
 	dt := time.Since(t1)
-	statstr := fmt.SPrintf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
+	statstr := fmt.Sprintf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
 	sfd.WriteString(statstr)
 
 }
@@ -273,13 +274,15 @@ type transformer interface {
 }
 
 type UniquePrefixMap struct {
+	output    *os.File
 	prefixes  map[string]bool
 	radixTree *radix.Tree
 	maplock   *sync.Mutex
 }
 
-func NewUniquePrefixMap() *UniquePrefixMap {
+func NewUniquePrefixMap(o *os.File) *UniquePrefixMap {
 	upm := UniquePrefixMap{}
+	upm.output = o
 	upm.prefixes = make(map[string]bool)
 	upm.radixTree = radix.New()
 	upm.maplock = &sync.Mutex{}
@@ -320,7 +323,8 @@ func (upm *UniquePrefixMap) summarize() {
 func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
 	pref := v.(IPWrapper).ip
 	if upm.prefixes[pref] {
-		fmt.Printf("%s\n", pref)
+		str := fmt.Sprintf("%s\n", pref)
+		upm.output.WriteString(str)
 		upm.radixTree.WalkPrefix(s, upm.subWalk)
 	}
 	return false
