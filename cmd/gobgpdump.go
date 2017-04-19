@@ -15,6 +15,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -49,14 +51,14 @@ func getScanner(file *os.File) (scanner *bufio.Scanner) {
 }
 
 var (
-	logout   string
-	dumpout  string
-	statout  string
-	pup      bool
-	isJson   bool
-	parallel bool
-	destAs   int
-	srcAs    int
+	logout     string
+	dumpout    string
+	statout    string
+	pup        bool
+	isJson     bool
+	parallel   bool
+	destAsList string
+	srcAsList  string
 )
 
 func init() {
@@ -66,8 +68,8 @@ func init() {
 	flag.BoolVar(&parallel, "p", false, "dump files in parallel, may cause out of order output")
 	flag.BoolVar(&pup, "pup", false, "print every advertized prefix only once")
 	flag.BoolVar(&isJson, "json", false, "print the output as json objects")
-	flag.IntVar(&destAs, "destAs", -1, "filter by this destination AS")
-	flag.IntVar(&srcAs, "srcAs", -1, "filter by this source AS")
+	flag.StringVar(&destAsList, "dest", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg dest. by")
+	flag.StringVar(&srcAsList, "src", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg source by")
 }
 
 func main() {
@@ -114,12 +116,38 @@ func main() {
 		tf = textTransformer{}
 	}
 	var vals []validator
-	if destAs != -1 {
-		av := NewAsValidator(destAs)
+	if destAsList != "" {
+		list := strings.Split(destAsList, ",")
+		aslist := make([]uint32, len(list))
+
+		for i := 0; i < len(aslist); i++ {
+			as, err := strconv.ParseUint(list[i], 10, 32)
+			if err == nil {
+				aslist[i] = uint32(as)
+			} else {
+				log.Printf("Encountered invalid AS: %s, aborting\n", list[i])
+				return
+			}
+		}
+
+		av := NewAsValidator(aslist)
 		vals = append(vals, av.validateDest)
 	}
-	if srcAs != -1 {
-		av := NewAsValidator(srcAs)
+	if srcAsList != "" {
+		list := strings.Split(srcAsList, ",")
+		aslist := make([]uint32, len(list))
+
+		for i := 0; i < len(aslist); i++ {
+			as, err := strconv.ParseUint(list[i], 10, 32)
+			if err == nil {
+				aslist[i] = uint32(as)
+			} else {
+				log.Printf("Encountered invalid AS: %s, aborting\n", list[i])
+				return
+			}
+		}
+
+		av := NewAsValidator(aslist)
 		vals = append(vals, av.validateSrc)
 	}
 
@@ -202,11 +230,11 @@ func validateAll(vals []validator, mbs *mrt.MrtBufferStack) bool {
 type validator func(*mrt.MrtBufferStack) bool
 
 type AsValidator struct {
-	as uint32
+	asList []uint32
 }
 
-func NewAsValidator(i int) *AsValidator {
-	return &AsValidator{uint32(i)}
+func NewAsValidator(asl []uint32) *AsValidator {
+	return &AsValidator{asl}
 }
 
 // This checks the last AS in the ASPath,
@@ -236,7 +264,13 @@ func (asval *AsValidator) validateSrc(mbs *mrt.MrtBufferStack) bool {
 		// Both are empty, not sure how thats possible, but return false
 		return false
 	}
-	return lastAs == asval.as
+
+	for i := 0; i < len(asval.asList); i++ {
+		if lastAs == asval.asList[i] {
+			return true
+		}
+	}
+	return false
 }
 
 func (asval *AsValidator) validateDest(mbs *mrt.MrtBufferStack) bool {
@@ -264,8 +298,13 @@ func (asval *AsValidator) validateDest(mbs *mrt.MrtBufferStack) bool {
 		// Both are empty, not sure how thats possible, but return false
 		return false
 	}
-	return firstAs == asval.as
 
+	for i := 0; i < len(asval.asList); i++ {
+		if firstAs == asval.asList[i] {
+			return true
+		}
+	}
+	return false
 }
 
 type transformer interface {
