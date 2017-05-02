@@ -54,6 +54,7 @@ var (
 	logout     string
 	dumpout    string
 	statout    string
+	mlout      bool
 	pup        bool
 	isJson     bool
 	parallel   bool
@@ -68,6 +69,7 @@ func init() {
 	flag.BoolVar(&parallel, "p", false, "dump files in parallel, may cause out of order output")
 	flag.BoolVar(&pup, "pup", false, "print every advertized prefix only once")
 	flag.BoolVar(&isJson, "json", false, "print the output as json objects")
+	flag.BoolVar(&mlout, "ml", false, "print the output as text rows to be passed for ML")
 	flag.StringVar(&destAsList, "dest", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg dest. by")
 	flag.StringVar(&srcAsList, "src", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg source by")
 }
@@ -112,6 +114,8 @@ func main() {
 	} else if pup {
 		upm := NewUniquePrefixMap(dumpfd)
 		tf = upm
+	} else if mlout {
+		tf = mlTransformer{}
 	} else {
 		tf = textTransformer{}
 	}
@@ -386,6 +390,89 @@ func (j jsonTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 }
 
 func (j jsonTransformer) summarize() {}
+
+type mltext struct {
+	Mrt_header struct {
+		Timestamp string
+	}
+	Bgp4mp_header struct {
+		Local_as int
+		Peer_as  int
+		Local_ip string
+		Peer_ip  string
+	}
+	Bgp_update struct {
+		Advertized_routes []struct {
+			Prefix string
+			Mask   int
+		}
+		Attrs struct {
+			As_path []struct {
+				As_seq []int
+				As_set []int
+			}
+			Next_hop string
+		}
+		Withdrawn_routes []struct {
+			Prefix string
+			Mask   int
+		}
+	}
+}
+
+type mlTransformer struct{}
+
+func (m mlTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
+	mbsj, err := json.Marshal(mbs)
+	if err != nil {
+		log.Printf("Error marshaling to json")
+		return ""
+	}
+	mtext := &mltext{}
+	err = json.Unmarshal(mbsj, mtext)
+	if err != nil {
+		log.Printf("Error unmarshalling from json to mltext struct:%s", err)
+		return ""
+	}
+	tparts := strings.Split(mtext.Mrt_header.Timestamp, "T")
+	if len(tparts) != 2 {
+		log.Printf("error parsing date and time from mltext string")
+		return ""
+	}
+	retstr := ""
+	for _, ar := range mtext.Bgp_update.Advertized_routes {
+		aspstr := ""
+		for _, asp := range mtext.Bgp_update.Attrs.As_path {
+			for _, setelem := range asp.As_set {
+				if aspstr == "" {
+					aspstr += fmt.Sprintf("%d", setelem)
+				} else {
+					aspstr += fmt.Sprintf("-%d", setelem)
+				}
+			}
+			for _, seqelem := range asp.As_seq {
+				if aspstr == "" {
+					aspstr += fmt.Sprintf("%d", seqelem)
+				} else {
+					aspstr += fmt.Sprintf("-%d", seqelem)
+				}
+			}
+		}
+		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%s,%s\n", tparts[0], tparts[1], mtext.Bgp4mp_header.Local_as,
+			mtext.Bgp4mp_header.Peer_as, mtext.Bgp4mp_header.Local_ip, mtext.Bgp4mp_header.Peer_ip,
+			"advertized", fmt.Sprintf("%s/%d", ar.Prefix, ar.Mask), aspstr,
+			mtext.Bgp_update.Attrs.Next_hop)
+	}
+	for _, wr := range mtext.Bgp_update.Withdrawn_routes {
+		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%s,%s\n", tparts[0], tparts[1], mtext.Bgp4mp_header.Local_as,
+			mtext.Bgp4mp_header.Peer_as, mtext.Bgp4mp_header.Local_ip, mtext.Bgp4mp_header.Peer_ip,
+			"withdrawn", fmt.Sprintf("%s/%d", wr.Prefix, wr.Mask), "",
+			"")
+	}
+	return retstr
+}
+
+func (m mlTransformer) summarize() {}
 
 type textTransformer struct{}
 
