@@ -312,9 +312,15 @@ type transformer interface {
 	summarize()
 }
 
+type TimestampedPrefix struct {
+	seen      bool
+	pref      string
+	timestamp time.Time
+}
+
 type UniquePrefixMap struct {
 	output    *os.File
-	prefixes  map[string]bool
+	prefixes  map[string]*TimestampedPrefix
 	radixTree *radix.Tree
 	maplock   *sync.Mutex
 }
@@ -322,18 +328,16 @@ type UniquePrefixMap struct {
 func NewUniquePrefixMap(o *os.File) *UniquePrefixMap {
 	upm := UniquePrefixMap{}
 	upm.output = o
-	upm.prefixes = make(map[string]bool)
+	upm.prefixes = make(map[string]*TimestampedPrefix)
 	upm.radixTree = radix.New()
 	upm.maplock = &sync.Mutex{}
 	return &upm
 }
 
-type IPWrapper struct {
-	ip string
-}
-
 func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 	update := mbs.Bgpupbuf.(protoparse.BGPUpdater).GetUpdate()
+	timeint := mbs.MrthBuf.(protoparse.MRTHeaderer).GetHeader().Timestamp
+	timestamp := time.Unix(int64(timeint), 0)
 
 	//If there are no advertized routes
 	if update.AdvertizedRoutes == nil || len(update.AdvertizedRoutes.Prefixes) == 0 {
@@ -343,10 +347,11 @@ func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) strin
 	for _, ar := range update.AdvertizedRoutes.Prefixes {
 		ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
 		upm.maplock.Lock()
-		if !upm.prefixes[ipstr] {
+		if upm.prefixes[ipstr] == nil {
+			tpref := TimestampedPrefix{true, ipstr, timestamp}
 			rkey := util.IpToRadixkey(util.GetIP(ar.GetPrefix()), uint8(ar.Mask))
-			upm.radixTree.Insert(rkey, IPWrapper{ipstr})
-			upm.prefixes[ipstr] = true
+			upm.radixTree.Insert(rkey, tpref)
+			upm.prefixes[ipstr] = &tpref
 		}
 		upm.maplock.Unlock()
 	}
@@ -360,17 +365,17 @@ func (upm *UniquePrefixMap) summarize() {
 }
 
 func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
-	pref := v.(IPWrapper).ip
-	if upm.prefixes[pref] {
-		str := fmt.Sprintf("%s\n", pref)
+	tp := v.(TimestampedPrefix)
+	if upm.prefixes[tp.pref].seen {
+		str := fmt.Sprintf("%s %d\n", tp.pref, tp.timestamp.Unix())
 		upm.output.WriteString(str)
-		upm.radixTree.WalkPrefix(s, upm.subWalk)
+		upm.radixTree.WalkPrefix(tp.pref, upm.subWalk)
 	}
 	return false
 }
 
 func (upm *UniquePrefixMap) subWalk(s string, v interface{}) bool {
-	upm.prefixes[v.(IPWrapper).ip] = false
+	upm.prefixes[v.(TimestampedPrefix).pref].seen = false
 	return false
 }
 
