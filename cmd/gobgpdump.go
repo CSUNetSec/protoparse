@@ -55,10 +55,12 @@ var (
 	dumpout    string
 	statout    string
 	pup        bool
+	pts        bool
 	isJson     bool
 	parallel   bool
 	destAsList string
 	srcAsList  string
+	confFiles  string
 )
 
 func init() {
@@ -67,18 +69,43 @@ func init() {
 	flag.StringVar(&statout, "so", "stdout", "file to dump statistics output")
 	flag.BoolVar(&parallel, "p", false, "dump files in parallel, may cause out of order output")
 	flag.BoolVar(&pup, "pup", false, "print every advertized prefix only once")
+	flag.BoolVar(&pts, "pts", false, "pup, but as a time series including withdrawals")
 	flag.BoolVar(&isJson, "json", false, "print the output as json objects")
 	flag.StringVar(&destAsList, "dest", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg dest. by")
 	flag.StringVar(&srcAsList, "src", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter msg source by")
+	flag.StringVar(&confFiles, "conf", "", "<collector format file>,<gobgpdump conf file>")
 }
 
 func main() {
 	flag.Parse()
 
+	var statfd *os.File
+	var dumpfd *os.File
+	var tf transformer
+	var vals []validator
 	args := flag.Args()
+
+	var si stringiter
+	si = &StringArray{args, 0}
+
 	if len(args) == 0 {
-		log.Println("mrt file not provided")
-		os.Exit(-1)
+		if confFiles == "" {
+			log.Println("mrt file not provided")
+			os.Exit(1)
+		} else {
+			fmt.Printf("Made it to conf\n")
+			parts := strings.Split(confFiles, ",")
+			if len(parts) != 2 {
+				log.Printf("Invalid configuration string\n")
+				return
+			}
+			// This is weird, si, err := ... should work, but it redeclares si
+			var err error
+			si, err = parseConfiguration(parts[0], parts[1])
+			if err != nil {
+				log.Println(err)
+			}
+		}
 	}
 
 	if logout != "stdout" {
@@ -86,8 +113,6 @@ func main() {
 		log.SetOutput(lfd)
 		defer lfd.Close()
 	}
-	var statfd *os.File
-	var dumpfd *os.File
 
 	if statout != "stdout" {
 		statfd, _ = os.Create(statout)
@@ -103,67 +128,55 @@ func main() {
 		dumpfd = os.Stdout
 	}
 
-	statstr := fmt.Sprintf("Dumping %d files\n", len(args))
-	statfd.WriteString(statstr)
-
-	var tf transformer
 	if isJson {
 		tf = jsonTransformer{}
-	} else if pup {
-		upm := NewUniquePrefixMap(dumpfd)
+	} else if pup || pts {
+		upm := NewUniquePrefixMap(dumpfd, pts)
 		tf = upm
 	} else {
 		tf = textTransformer{}
 	}
-	var vals []validator
 	if destAsList != "" {
-		list := strings.Split(destAsList, ",")
-		aslist := make([]uint32, len(list))
-
-		for i := 0; i < len(aslist); i++ {
-			as, err := strconv.ParseUint(list[i], 10, 32)
-			if err == nil {
-				aslist[i] = uint32(as)
-			} else {
-				log.Printf("Encountered invalid AS: %s, aborting\n", list[i])
-				return
-			}
+		aslist, err := parseAsList(destAsList)
+		if err != nil {
+			log.Printf("Error parsing as list: %s\n", err)
+			return
 		}
 
 		av := NewAsValidator(aslist)
 		vals = append(vals, av.validateDest)
 	}
 	if srcAsList != "" {
-		list := strings.Split(srcAsList, ",")
-		aslist := make([]uint32, len(list))
-
-		for i := 0; i < len(aslist); i++ {
-			as, err := strconv.ParseUint(list[i], 10, 32)
-			if err == nil {
-				aslist[i] = uint32(as)
-			} else {
-				log.Printf("Encountered invalid AS: %s, aborting\n", list[i])
-				return
-			}
+		aslist, err := parseAsList(srcAsList)
+		if err != nil {
+			log.Printf("Error parsing AS list: %s", err)
+			return
 		}
 
 		av := NewAsValidator(aslist)
 		vals = append(vals, av.validateSrc)
 	}
 
+	fmt.Printf("Made it to dump\n")
+	statstr := fmt.Sprintf("Dumping %d files\n", len(args))
+	statfd.WriteString(statstr)
+
 	wg := &sync.WaitGroup{}
 	start := time.Now()
 	// Each goroutine requires an fd,
 	// I should consider adding a struct to
 	// manage the number of fds consumed by the program
-	for _, name := range args {
+	name, serr := si.Next()
+	for serr == nil {
 		if parallel && false {
 			wg.Add(1)
 			go dumpFile(name, tf, vals, dumpfd, statfd, wg)
 		} else {
 			dumpFile(name, tf, vals, dumpfd, statfd, nil)
 		}
+		name, serr = si.Next()
 	}
+	fmt.Println(serr)
 
 	if parallel {
 		wg.Wait()
@@ -215,6 +228,24 @@ func dumpFile(fName string, tf transformer, vals []validator, dfd, sfd *os.File,
 	statstr := fmt.Sprintf("Scanned %s: %d entries, %d passed filters, total size: %d bytes in %v\n", fName, numentries, unfilteredct, totsz, dt)
 	sfd.WriteString(statstr)
 
+}
+
+type stringiter interface {
+	Next() (string, error)
+}
+
+type StringArray struct {
+	data []string
+	cur  int
+}
+
+func (s *StringArray) Next() (string, error) {
+	if s.cur >= len(s.data) {
+		return "", fmt.Errorf("")
+	}
+	str := s.data[s.cur]
+	s.cur++
+	return str, nil
 }
 
 func validateAll(vals []validator, mbs *mrt.MrtBufferStack) bool {
@@ -325,7 +356,7 @@ type UniquePrefixMap struct {
 	maplock   *sync.Mutex
 }
 
-func NewUniquePrefixMap(o *os.File) *UniquePrefixMap {
+func NewUniquePrefixMap(o *os.File, pts bool) *UniquePrefixMap {
 	upm := UniquePrefixMap{}
 	upm.output = o
 	upm.prefixes = make(map[string]*TimestampedPrefix)
@@ -431,4 +462,197 @@ func parseHeaders(mrth protoparse.PbVal, entryCt int) (bgp4h, bgph, bgpup protop
 	}
 
 	return
+}
+
+func parseAsList(liststr string) ([]uint32, error) {
+	list := strings.Split(liststr, ",")
+	aslist := make([]uint32, len(list))
+
+	for i := 0; i < len(aslist); i++ {
+		as, err := strconv.ParseUint(list[i], 10, 32)
+		if err == nil {
+			aslist[i] = uint32(as)
+		} else {
+			return nil, fmt.Errorf("Invalid AS: %s\n", list[i])
+		}
+	}
+	return aslist, nil
+}
+
+type DumpList struct {
+	ColList []string
+	Start   string
+	End     string
+	Ofmt    string
+	StFd    string
+	DFd     string
+	LFd     string
+	SrcList string
+	DstList string
+}
+
+type DumpIter struct {
+	paths     []string
+	pathNum   int
+	curList   []os.FileInfo
+	pathIndex int
+}
+
+func NewDumpIter(dl DumpList, fmts map[string]string) (*DumpIter, error) {
+	di := DumpIter{}
+	startT, err := time.Parse("2006.01", dl.Start)
+	if err != nil {
+		return nil, err
+	}
+	endT, err := time.Parse("2006.01", dl.End)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add a day to the end so it should be a fully open interval
+	for inc := startT; inc.Before(endT.AddDate(0, 0, 1)); inc = inc.AddDate(0, 1, 0) {
+		for _, col := range dl.ColList {
+			path, ok := fmts[col]
+			if !ok {
+				path = fmts["_default"]
+				// Replace the placeholder with the name of the collector
+				path = strings.Replace(path, "{x}", col, -1)
+			}
+			// Replace the time placeholder with inc
+			path = strings.Replace(path, "{yyyy.mm}", inc.Format("2006.01"), -1)
+			di.paths = append(di.paths, path)
+			fmt.Printf("Adding path: %s\n", path)
+		}
+	}
+	di.pathNum = 0
+	di.pathIndex = 0
+	di.curList = nil
+	return &di, nil
+}
+
+func (di *DumpIter) Next() (string, error) {
+	if di.curList == nil {
+		if di.pathNum >= len(di.paths) {
+			return "", fmt.Errorf("End of paths")
+		}
+		fddir, err := os.Open(di.paths[di.pathNum])
+		if err != nil {
+			return "", err
+		}
+		di.curList, err = fddir.Readdir(0)
+		if err != nil {
+			return "", nil
+		}
+		fddir.Close()
+
+		di.pathIndex = 0
+	}
+
+	ret := di.curList[di.pathIndex].Name()
+	di.pathIndex++
+	if di.pathIndex >= len(di.curList) {
+		di.curList = nil
+		di.pathNum++
+	}
+	return ret, nil
+}
+
+func parseConfiguration(colfmt, conf string) (stringiter, error) {
+	var dl DumpList
+	fd, err := os.Open(conf)
+	if err != nil {
+		fmt.Printf("Error opening conf")
+		return &StringArray{}, err
+	}
+	defer fd.Close()
+
+	dec := json.NewDecoder(fd)
+	err = dec.Decode(&dl)
+	if err != nil {
+		return &StringArray{}, err
+	}
+	// Load all the normal parameters from the config file
+	switch dl.Ofmt {
+	case "json":
+		isJson = true
+		pup = false
+	case "pup":
+		pup = true
+		isJson = false
+	case "":
+		isJson = false
+		pup = false
+	default:
+		return &StringArray{}, fmt.Errorf("Invalid format specified\n")
+	}
+	dumpout = dl.DFd
+	statout = dl.StFd
+	logout = dl.LFd
+	srcAsList = dl.SrcList
+	destAsList = dl.DstList
+
+	fmts, err := parseCollectorFormat(colfmt)
+	if err != nil {
+		return &StringArray{}, err
+	}
+
+	di, err := NewDumpIter(dl, fmts)
+	if err != nil {
+		return &StringArray{}, err
+	}
+
+	return di, nil
+}
+
+func parseCollectorFormat(fname string) (map[string]string, error) {
+	fd, err := os.Open(fname)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+
+	reader := bufio.NewReader(fd)
+	formats := make(map[string]string)
+
+	str, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("Error reading collector file")
+	}
+	ok, base, err := readPair(str)
+	if err != nil || ok != "{base}" {
+		return nil, fmt.Errorf("Bad string formatting in collector file")
+	}
+
+	str, err = reader.ReadString('\n')
+	if err != nil {
+		return nil, fmt.Errorf("Error reading collector file")
+	}
+	ok, def, err := readPair(str)
+	if err != nil || ok != "{default}" {
+		return nil, fmt.Errorf("Bad string formatting in collector file")
+	}
+	formats["_default"] = base + def
+
+	for err == nil {
+		str, err = reader.ReadString('\n')
+		if err != nil {
+			break
+		}
+		name, path, serr := readPair(str)
+		if serr != nil {
+			return nil, serr
+		}
+		formats[name] = base + path
+	}
+
+	return formats, nil
+}
+
+func readPair(str string) (string, string, error) {
+	parts := strings.Split(str, " ")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("Badly formatted string: %s\n", str)
+	}
+	ret2 := strings.Replace(parts[1], "\n", "", -1)
+	return parts[0], ret2, nil
 }
