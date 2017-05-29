@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"compress/bzip2"
+	"encoding/gob"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -93,7 +94,6 @@ func main() {
 			log.Println("mrt file not provided")
 			os.Exit(1)
 		} else {
-			fmt.Printf("Made it to conf\n")
 			parts := strings.Split(confFiles, ",")
 			if len(parts) != 2 {
 				log.Printf("Invalid configuration string\n")
@@ -103,7 +103,8 @@ func main() {
 			var err error
 			si, err = parseConfiguration(parts[0], parts[1])
 			if err != nil {
-				log.Println(err)
+				fmt.Printf("Error: %s\n", err)
+				return
 			}
 		}
 	}
@@ -157,7 +158,6 @@ func main() {
 		vals = append(vals, av.validateSrc)
 	}
 
-	fmt.Printf("Made it to dump\n")
 	statstr := fmt.Sprintf("Dumping %d files\n", len(args))
 	statfd.WriteString(statstr)
 
@@ -168,11 +168,14 @@ func main() {
 	// manage the number of fds consumed by the program
 	name, serr := si.Next()
 	for serr == nil {
-		if parallel && false {
-			wg.Add(1)
-			go dumpFile(name, tf, vals, dumpfd, statfd, wg)
-		} else {
-			dumpFile(name, tf, vals, dumpfd, statfd, nil)
+		// This should only happen if it encounters a hidden file
+		if name != "" {
+			if parallel && false {
+				wg.Add(1)
+				go dumpFile(name, tf, vals, dumpfd, statfd, wg)
+			} else {
+				dumpFile(name, tf, vals, dumpfd, statfd, nil)
+			}
 		}
 		name, serr = si.Next()
 	}
@@ -343,25 +346,34 @@ type transformer interface {
 	summarize()
 }
 
-type TimestampedPrefix struct {
-	seen      bool
-	pref      string
-	timestamp time.Time
+type PrefixEvent struct {
+	Timestamp  time.Time
+	Advertized bool
+}
+
+type PrefixHistory struct {
+	seen   bool
+	Pref   string
+	Events []PrefixEvent
+}
+
+func (ph *PrefixHistory) add(t time.Time, adv bool) {
+	ph.Events = append(ph.Events, PrefixEvent{t, adv})
 }
 
 type UniquePrefixMap struct {
-	output    *os.File
-	prefixes  map[string]*TimestampedPrefix
-	radixTree *radix.Tree
-	maplock   *sync.Mutex
+	output   *os.File
+	prefixes map[string]interface{}
+	maplock  *sync.Mutex
+	isTS     bool
 }
 
 func NewUniquePrefixMap(o *os.File, pts bool) *UniquePrefixMap {
 	upm := UniquePrefixMap{}
 	upm.output = o
-	upm.prefixes = make(map[string]*TimestampedPrefix)
-	upm.radixTree = radix.New()
+	upm.prefixes = make(map[string]interface{})
 	upm.maplock = &sync.Mutex{}
+	upm.isTS = pts
 	return &upm
 }
 
@@ -376,13 +388,31 @@ func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) strin
 	}
 
 	for _, ar := range update.AdvertizedRoutes.Prefixes {
-		ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
+		key := util.IpToRadixkey(util.GetIP(ar.GetPrefix()), uint8(ar.Mask))
 		upm.maplock.Lock()
-		if upm.prefixes[ipstr] == nil {
-			tpref := TimestampedPrefix{true, ipstr, timestamp}
-			rkey := util.IpToRadixkey(util.GetIP(ar.GetPrefix()), uint8(ar.Mask))
-			upm.radixTree.Insert(rkey, tpref)
-			upm.prefixes[ipstr] = &tpref
+		if upm.prefixes[key] == nil {
+			ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
+			prefH := PrefixHistory{true, ipstr, []PrefixEvent{{timestamp, true}}}
+			upm.prefixes[key] = &prefH
+		} else if upm.isTS {
+			upm.prefixes[key].(*PrefixHistory).add(timestamp, true)
+		}
+		upm.maplock.Unlock()
+	}
+
+	if update.WithdrawnRoutes == nil || len(update.WithdrawnRoutes.Prefixes) == 0 {
+		return ""
+	}
+
+	for _, ar := range update.WithdrawnRoutes.Prefixes {
+		key := util.IpToRadixkey(util.GetIP(ar.GetPrefix()), uint8(ar.Mask))
+		upm.maplock.Lock()
+		if upm.prefixes[key] == nil {
+			ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
+			prefH := PrefixHistory{true, ipstr, []PrefixEvent{{timestamp, false}}}
+			upm.prefixes[key] = &prefH
+		} else if upm.isTS {
+			upm.prefixes[key].(*PrefixHistory).add(timestamp, false)
 		}
 		upm.maplock.Unlock()
 	}
@@ -392,21 +422,39 @@ func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) strin
 }
 
 func (upm *UniquePrefixMap) summarize() {
-	upm.radixTree.Walk(upm.topWalk)
+	var g *gob.Encoder
+	if upm.isTS {
+		g = gob.NewEncoder(upm.output)
+	}
+
+	rTree := radix.NewFromMap(upm.prefixes)
+	//rTree.Walk(upm.topWalk)
+	rTree.Walk(func(s string, v interface{}) bool {
+		ph := v.(*PrefixHistory)
+		if ph.seen {
+			if upm.isTS {
+				g.Encode(ph)
+			} else {
+				str := fmt.Sprintf("%s %d\n", ph.Pref, ph.Events[0].Timestamp.Unix())
+				upm.output.WriteString(str)
+			}
+			rTree.WalkPrefix(ph.Pref, upm.subWalk)
+		}
+		return false
+	})
 }
 
-func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
-	tp := v.(TimestampedPrefix)
-	if upm.prefixes[tp.pref].seen {
-		str := fmt.Sprintf("%s %d\n", tp.pref, tp.timestamp.Unix())
+/*func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
+	if upm.prefixes[s].(*PrefixHistory).seen {
+		str := fmt.Sprintf("%s %d\n", v.(*PrefixHistory).pref, v.(*PrefixHistory).events[0].timestamp.Unix())
 		upm.output.WriteString(str)
-		upm.radixTree.WalkPrefix(tp.pref, upm.subWalk)
+		upm.radixTree.WalkPrefix(v.(*PrefixHistory).pref, upm.subWalk)
 	}
 	return false
-}
+}*/
 
 func (upm *UniquePrefixMap) subWalk(s string, v interface{}) bool {
-	upm.prefixes[v.(TimestampedPrefix).pref].seen = false
+	v.(*PrefixHistory).seen = false
 	return false
 }
 
@@ -541,7 +589,7 @@ func (di *DumpIter) Next() (string, error) {
 		}
 		di.curList, err = fddir.Readdir(0)
 		if err != nil {
-			return "", nil
+			return "", err
 		}
 		fddir.Close()
 
@@ -549,12 +597,17 @@ func (di *DumpIter) Next() (string, error) {
 	}
 
 	ret := di.curList[di.pathIndex].Name()
+	path := di.paths[di.pathNum]
+
 	di.pathIndex++
 	if di.pathIndex >= len(di.curList) {
 		di.curList = nil
 		di.pathNum++
 	}
-	return ret, nil
+	if ret[0] == '.' {
+		return "", nil
+	}
+	return path + ret, nil
 }
 
 func parseConfiguration(colfmt, conf string) (stringiter, error) {
@@ -579,6 +632,10 @@ func parseConfiguration(colfmt, conf string) (stringiter, error) {
 	case "pup":
 		pup = true
 		isJson = false
+	case "pts":
+		pts = true
+		isJson = false
+		pup = false
 	case "":
 		isJson = false
 		pup = false
