@@ -352,13 +352,22 @@ type PrefixEvent struct {
 }
 
 type PrefixHistory struct {
-	seen   bool
-	Pref   string
-	Events []PrefixEvent
+	encoded bool
+	Pref    string
+	Events  []PrefixEvent
+}
+
+func NewPrefixHistory(pref string, firstTime time.Time, isAdvert bool) *PrefixHistory {
+	firstEvent := PrefixEvent{firstTime, isAdvert}
+	return &PrefixHistory{false, pref, []PrefixEvent{firstEvent}}
 }
 
 func (ph *PrefixHistory) add(t time.Time, adv bool) {
 	ph.Events = append(ph.Events, PrefixEvent{t, adv})
+}
+
+func (ph *PrefixHistory) setEncoded(val bool) {
+	ph.encoded = val
 }
 
 type UniquePrefixMap struct {
@@ -392,8 +401,7 @@ func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) strin
 		upm.maplock.Lock()
 		if upm.prefixes[key] == nil {
 			ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
-			prefH := PrefixHistory{true, ipstr, []PrefixEvent{{timestamp, true}}}
-			upm.prefixes[key] = &prefH
+			upm.prefixes[key] = NewPrefixHistory(ipstr, timestamp, true)
 		} else if upm.isTS {
 			upm.prefixes[key].(*PrefixHistory).add(timestamp, true)
 		}
@@ -409,8 +417,7 @@ func (upm *UniquePrefixMap) transform(msgNum int, mbs *mrt.MrtBufferStack) strin
 		upm.maplock.Lock()
 		if upm.prefixes[key] == nil {
 			ipstr := fmt.Sprintf("%s/%d", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
-			prefH := PrefixHistory{true, ipstr, []PrefixEvent{{timestamp, false}}}
-			upm.prefixes[key] = &prefH
+			upm.prefixes[key] = NewPrefixHistory(ipstr, timestamp, false)
 		} else if upm.isTS {
 			upm.prefixes[key].(*PrefixHistory).add(timestamp, false)
 		}
@@ -428,33 +435,33 @@ func (upm *UniquePrefixMap) summarize() {
 	}
 
 	rTree := radix.NewFromMap(upm.prefixes)
-	//rTree.Walk(upm.topWalk)
+	// Access the map
 	rTree.Walk(func(s string, v interface{}) bool {
-		ph := v.(*PrefixHistory)
-		if ph.seen {
+		ph := upm.prefixes[s].(*PrefixHistory)
+		// The following code should only run if the prefix hasn't been encoded,
+		// meaning the prefix is a parent prefix
+		if !ph.encoded {
 			if upm.isTS {
 				g.Encode(ph)
 			} else {
-				str := fmt.Sprintf("%s %d\n", ph.Pref, ph.Events[0].Timestamp.Unix())
+				str := ph.Pref + " "
+				if len(ph.Events) != 0 {
+					str += fmt.Sprintf("%d\n", ph.Events[0].Timestamp.Unix())
+				}
 				upm.output.WriteString(str)
 			}
+			ph.setEncoded(true)
 			rTree.WalkPrefix(ph.Pref, upm.subWalk)
 		}
 		return false
 	})
 }
 
-/*func (upm *UniquePrefixMap) topWalk(s string, v interface{}) bool {
-	if upm.prefixes[s].(*PrefixHistory).seen {
-		str := fmt.Sprintf("%s %d\n", v.(*PrefixHistory).pref, v.(*PrefixHistory).events[0].timestamp.Unix())
-		upm.output.WriteString(str)
-		upm.radixTree.WalkPrefix(v.(*PrefixHistory).pref, upm.subWalk)
-	}
-	return false
-}*/
-
 func (upm *UniquePrefixMap) subWalk(s string, v interface{}) bool {
-	v.(*PrefixHistory).seen = false
+	// Set all child prefixes encoded value to true
+	// because if this code is running, then their parent has been encoded
+	ph := upm.prefixes[s].(*PrefixHistory)
+	ph.setEncoded(true)
 	return false
 }
 
