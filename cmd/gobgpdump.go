@@ -163,9 +163,7 @@ func main() {
 
 	wg := &sync.WaitGroup{}
 	start := time.Now()
-	// Each goroutine requires an fd,
-	// I should consider adding a struct to
-	// manage the number of fds consumed by the program
+
 	name, serr := si.Next()
 	for serr == nil {
 		// This should only happen if it encounters a hidden file
@@ -455,9 +453,6 @@ func (upm *UniquePrefixMap) summarize() {
 				upm.output.WriteString(str)
 			}
 			ph.setEncoded(true)
-			// I am a humongous moron, ph.Pref is not a key in this tree,
-			// beacuse I use the radix keys
-			//rTree.WalkPrefix(ph.Pref, upm.subWalk)
 			rTree.WalkPrefix(s, upm.subWalk)
 		}
 		return false
