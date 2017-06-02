@@ -434,7 +434,11 @@ func (upm *UniquePrefixMap) summarize() {
 		g = gob.NewEncoder(upm.output)
 	}
 
-	rTree := radix.NewFromMap(upm.prefixes)
+	rTree := radix.New()
+	for key, value := range upm.prefixes {
+		rTree.Insert(key, value)
+	}
+
 	// Access the map
 	rTree.Walk(func(s string, v interface{}) bool {
 		ph := upm.prefixes[s].(*PrefixHistory)
@@ -451,7 +455,10 @@ func (upm *UniquePrefixMap) summarize() {
 				upm.output.WriteString(str)
 			}
 			ph.setEncoded(true)
-			rTree.WalkPrefix(ph.Pref, upm.subWalk)
+			// I am a humongous moron, ph.Pref is not a key in this tree,
+			// beacuse I use the radix keys
+			//rTree.WalkPrefix(ph.Pref, upm.subWalk)
+			rTree.WalkPrefix(s, upm.subWalk)
 		}
 		return false
 	})
