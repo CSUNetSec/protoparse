@@ -439,6 +439,7 @@ func (m mlTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 		log.Printf("error parsing date and time from mltext string")
 		return ""
 	}
+	t1parts := strings.Split(tparts[1], "Z")
 	retstr := ""
 	for _, ar := range mtext.Bgp_update.Advertized_routes {
 		aspstr := ""
@@ -458,15 +459,15 @@ func (m mlTransformer) transform(msgNum int, mbs *mrt.MrtBufferStack) string {
 				}
 			}
 		}
-		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%s,%s\n", tparts[0], tparts[1], mtext.Bgp4mp_header.Local_as,
+		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%d,%s,%s\n", tparts[0], t1parts[0], mtext.Bgp4mp_header.Local_as,
 			mtext.Bgp4mp_header.Peer_as, mtext.Bgp4mp_header.Local_ip, mtext.Bgp4mp_header.Peer_ip,
-			"advertized", fmt.Sprintf("%s/%d", ar.Prefix, ar.Mask), aspstr,
+			"advertized", ar.Prefix, ar.Mask, aspstr,
 			mtext.Bgp_update.Attrs.Next_hop)
 	}
 	for _, wr := range mtext.Bgp_update.Withdrawn_routes {
-		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%s,%s\n", tparts[0], tparts[1], mtext.Bgp4mp_header.Local_as,
+		retstr += fmt.Sprintf("%s,%s,%d,%d,%s,%s,%s,%s,%d,%s,%s\n", tparts[0], t1parts[0], mtext.Bgp4mp_header.Local_as,
 			mtext.Bgp4mp_header.Peer_as, mtext.Bgp4mp_header.Local_ip, mtext.Bgp4mp_header.Peer_ip,
-			"withdrawn", fmt.Sprintf("%s/%d", wr.Prefix, wr.Mask), "",
+			"withdrawn", wr.Prefix, wr.Mask, "",
 			"")
 	}
 	return retstr
