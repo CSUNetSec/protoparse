@@ -88,14 +88,13 @@ func (id IdentityFormatter) summarize() {}
 
 // -------------------------------------------------------------
 type PrefixHistory struct {
-	Pref    string
-	Events  []PrefixEvent
-	encoded bool
+	Pref   string
+	Events []PrefixEvent
 }
 
 func NewPrefixHistory(pref string, firstTime time.Time, advert bool) *PrefixHistory {
 	pe := PrefixEvent{firstTime, advert}
-	return &PrefixHistory{pref, []PrefixEvent{pe}, false}
+	return &PrefixHistory{pref, []PrefixEvent{pe}}
 }
 
 func (ph *PrefixHistory) addEvent(timestamp time.Time, advert bool) {
@@ -144,15 +143,20 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, _ []byte) (string, 
 	return "", nil
 }
 
-// TODO: Fix this
-// This does no checking to see if the existing map entry has a later
-// timestamp than the current one.
+// If this finds a Route that is not present in the prefixes map,
+// adds it in. If it finds one, but these Routes have an earlier
+// timestamp, it replaces the old one.
 func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert bool) {
 	for _, route := range rts {
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		upl.mux.Lock()
 		if upl.prefixes[key] == nil {
 			upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
+		} else {
+			oldT := upl.prefixes[key].(*PrefixHistory).Timestamp
+			if oldT.After(timestamp) {
+				upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
+			}
 		}
 		upl.mux.Unlock()
 	}

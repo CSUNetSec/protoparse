@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
-	radix "github.com/armon/go-radix"
 	"net"
-	"strconv"
-	"strings"
 )
 
 func GetIP(a *pbcom.IPAddressWrapper) []byte {

@@ -26,6 +26,12 @@ type DumpConfig struct {
 	stat    *MultiWriteFile
 }
 
+func (dc *DumpConfig) CloseAll() {
+	dc.dump.Close()
+	dc.log.Close()
+	dc.stat.Close()
+}
+
 func main() {
 	// Get the config for this dump
 	dc, err := getDumpConfig()
@@ -45,6 +51,7 @@ func main() {
 	wg.Wait()
 	dc.fmtr.summarize()
 	dc.stat.WriteString(fmt.Sprintf("Total time taken: %s\n", time.Since(dumpStart)))
+	dc.CloseAll()
 }
 
 // Simple worker function, launched in a new goroutine.
@@ -68,9 +75,9 @@ func worker(dc *DumpConfig, wg *sync.WaitGroup) {
 // filters them, formats them, and writes them to the dump file
 func dumpFile(name string, dc *DumpConfig) {
 	// At this point, we only want to read bzipped files
-	/*if !isBz2(name) {
+	if !isBz2(name) {
 		return
-	}*/
+	}
 
 	mrtFile, err := os.Open(name)
 	if err != nil {
@@ -171,4 +178,12 @@ func (mwf *MultiWriteFile) Write(data []byte) (n int, err error) {
 		return 0, nil
 	}
 	return mwf.base.Write(data)
+}
+
+func (mwf *MultiWriteFile) Close() error {
+	if mwf.base == nil {
+		return nil
+	}
+
+	return mwf.base.Close()
 }

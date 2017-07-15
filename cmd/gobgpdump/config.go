@@ -315,8 +315,6 @@ func readCollectorFormat(fname string) (map[string]string, error) {
 	}
 	formats["_default"] = base + def
 
-	//TODO
-	// This code was strange, investigate
 	for err == nil {
 		name, path, err := readPairWithRule(reader, "")
 		if err == io.EOF {
@@ -325,8 +323,10 @@ func readCollectorFormat(fname string) (map[string]string, error) {
 
 		formats[name] = base + path
 	}
-	// I shouldn't have to check both of these, but I have to
-	if err != nil && err != io.EOF {
+
+	// Error must be non-nil at this point, but it may still
+	// be normal, so check if it's not
+	if err != io.EOF {
 		return nil, err
 	}
 
