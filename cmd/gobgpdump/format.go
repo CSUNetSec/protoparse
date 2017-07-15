@@ -153,7 +153,7 @@ func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert 
 		if upl.prefixes[key] == nil {
 			upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
 		} else {
-			oldT := upl.prefixes[key].(*PrefixHistory).Timestamp
+			oldT := upl.prefixes[key].(*PrefixHistory).Events[0].Timestamp
 			if oldT.After(timestamp) {
 				upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
 			}
