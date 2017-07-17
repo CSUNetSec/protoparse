@@ -148,6 +148,11 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, _ []byte) (string, 
 // timestamp, it replaces the old one.
 func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert bool) {
 	for _, route := range rts {
+		// Ignore this prefix, because it causes a lot of problems
+		if route.String() == "::/1" {
+			continue
+		}
+
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		upl.mux.Lock()
 		if upl.prefixes[key] == nil {
@@ -169,7 +174,7 @@ func (upl *UniquePrefixList) summarize() {
 	// Whatever is left should be output
 	for _, value := range upl.prefixes {
 		ph := value.(*PrefixHistory)
-		upl.output.WriteString(fmt.Sprintf("%s\n", ph.Pref))
+		upl.output.WriteString(fmt.Sprintf("%s %d\n", ph.Pref, ph.Events[0].Timestamp.Unix()))
 	}
 }
 
@@ -208,6 +213,11 @@ func (ups *UniquePrefixSeries) format(mbs *mrt.MrtBufferStack, _ []byte) (string
 
 func (ups *UniquePrefixSeries) addRoutes(rts []Route, timestamp time.Time, advert bool) {
 	for _, route := range rts {
+		//This route causes a lot of trouble
+		if route.String() == "::/1" {
+			continue
+		}
+
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		ups.mux.Lock()
 		if ups.prefixes[key] == nil {

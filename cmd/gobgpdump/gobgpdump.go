@@ -66,6 +66,8 @@ func worker(dc *DumpConfig, wg *sync.WaitGroup) {
 		dumpFile(name, dc)
 		name, serr = dc.source.Next()
 	}
+	// On an unsuccessful dump, other threads should also stop
+	// TODO: add context to DumpConfig
 	if serr != EOP {
 		fmt.Printf("Dump unsucessful: %s\n", serr)
 	}
@@ -75,7 +77,8 @@ func worker(dc *DumpConfig, wg *sync.WaitGroup) {
 // filters them, formats them, and writes them to the dump file
 func dumpFile(name string, dc *DumpConfig) {
 	// At this point, we only want to read bzipped files
-	if !isBz2(name) {
+	if !isBz2(name) && false {
+		dc.log.WriteString(fmt.Sprintf("Couldn't open: %s: not a bz2 file\n", name))
 		return
 	}
 

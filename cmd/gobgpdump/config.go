@@ -5,6 +5,9 @@
 // Has passed fairly rigorous testing.
 // Passes normal options, config files with multiple
 // collectors over multiple months
+
+//TODO: Add into the configuration option a list of allowed file
+// extnsions, default being all, -conf option only
 package main
 
 import (
@@ -326,7 +329,7 @@ func readCollectorFormat(fname string) (map[string]string, error) {
 
 	// Error must be non-nil at this point, but it may still
 	// be normal, so check if it's not
-	if err != io.EOF {
+	if err != nil && err != io.EOF {
 		return nil, err
 	}
 
