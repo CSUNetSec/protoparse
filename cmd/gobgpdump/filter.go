@@ -19,6 +19,47 @@ import (
 
 type Filter func(mbs *mrt.MrtBufferStack) bool
 
+type PrefixFilter struct {
+	prefixes []string
+}
+
+// This does not check if a prefix in raw is properly formatted, thus
+// 1.1:3/1 is not valid, but is not caught, so no messages could pass
+func NewPrefixFilter(raw string) Filter {
+	pf := PrefixFilter{strings.Split(raw, ",")}
+	return pf.filterBySeen
+}
+
+func (pf PrefixFilter) filterBySeen(mbs *mrt.MrtBufferStack) bool {
+	advPrefs, err := getAdvertizedPrefixes(mbs)
+	if err == nil {
+		for _, rt := range advPrefs {
+			if pf.matchesOne(rt.String()) {
+				return true
+			}
+		}
+	}
+
+	wdnPrefs, err := getWithdrawnPrefixes(mbs)
+	if err == nil {
+		for _, rt := range wdnPrefs {
+			if pf.matchesOne(rt.String()) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (pf PrefixFilter) matchesOne(pref string) bool {
+	for _, comp := range pf.prefixes {
+		if pref == comp {
+			return true
+		}
+	}
+	return false
+}
+
 type ASFilter struct {
 	asList []uint32
 }

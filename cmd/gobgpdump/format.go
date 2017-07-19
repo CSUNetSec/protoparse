@@ -149,7 +149,7 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, _ []byte) (string, 
 func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert bool) {
 	for _, route := range rts {
 		// Ignore this prefix, because it causes a lot of problems
-		if route.String() == "::/1" {
+		if route.Mask == 1 {
 			continue
 		}
 
@@ -214,7 +214,7 @@ func (ups *UniquePrefixSeries) format(mbs *mrt.MrtBufferStack, _ []byte) (string
 func (ups *UniquePrefixSeries) addRoutes(rts []Route, timestamp time.Time, advert bool) {
 	for _, route := range rts {
 		//This route causes a lot of trouble
-		if route.String() == "::/1" {
+		if route.Mask == 1 {
 			continue
 		}
 

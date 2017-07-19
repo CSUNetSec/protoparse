@@ -27,17 +27,18 @@ import (
 // This is just convenient so it can be read
 // as a json object
 type ConfigFile struct {
-	Collist []string //List of collectors
-	Start   string   // Start month		These first three are only used in configuration option, which is why they don't have flags
-	End     string   //end month
-	Lo      string   //Log output
-	So      string   //Stat output
-	Do      string   //dump output
-	Wc      int      //worker count
-	Fmtr    string   //output format
-	conf    bool     //get config from a file
-	Srcas   string   `json:"Srcas,omitempty"`
-	Destas  string   `json:"Destas,omitempty"`
+	Collist  []string //List of collectors
+	Start    string   // Start month		These first three are only used in configuration option, which is why they don't have flags
+	End      string   //end month
+	Lo       string   //Log output
+	So       string   //Stat output
+	Do       string   //dump output
+	Wc       int      //worker count
+	Fmtr     string   //output format
+	conf     bool     //get config from a file
+	Srcas    string   `json:"Srcas,omitempty"`
+	Destas   string   `json:"Destas,omitempty"`
+	PrefList string   `json:"prefixes,omitempty"`
 }
 
 var configFile ConfigFile
@@ -51,6 +52,7 @@ func init() {
 		"pup, pts, day, json, text, id")
 	flag.StringVar(&configFile.Srcas, "srcas", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter message source by")
 	flag.StringVar(&configFile.Destas, "destas", "", "list of comma separated AS's (e.g. 1,2,3,4) to filter message destination by")
+	flag.StringVar(&configFile.PrefList, "prefixes", "", "list of commma separated prefixes. Messages containing any in the list will pass filters")
 	flag.BoolVar(&configFile.conf, "conf", false, "draw configuration from a file")
 	flag.IntVar(&configFile.Wc, "wc", 1, "number of worker threads to use (max 16)")
 }
@@ -129,6 +131,11 @@ func getFilters() ([]Filter, error) {
 			return nil, err
 		}
 		filters = append(filters, destFilt)
+	}
+
+	if configFile.PrefList != "" {
+		prefFilt := NewPrefixFilter(configFile.PrefList)
+		filters = append(filters, prefFilt)
 	}
 	return filters, nil
 }
