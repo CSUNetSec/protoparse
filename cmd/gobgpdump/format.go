@@ -26,8 +26,19 @@ import (
 // dump file.
 // The underlying buffer is necessary for the ID formatter
 type Formatter interface {
-	format(*mrt.MrtBufferStack, []byte) (string, error)
+	format(*mrt.MrtBufferStack, MBSInfo) (string, error)
 	summarize()
+}
+
+// This contains miscellaneous info for the MBS structure
+type MBSInfo struct {
+	raw    []byte
+	file   string
+	msgNum int
+}
+
+func NewMBSInfo(raw []byte, file string, msg int) MBSInfo {
+	return MBSInfo{raw, file, msg}
 }
 
 // -----------------------------------------------------------
@@ -41,7 +52,7 @@ func NewTextFormatter() *TextFormatter {
 	return &TextFormatter{0}
 }
 
-func (t *TextFormatter) format(mbs *mrt.MrtBufferStack, _ []byte) (string, error) {
+func (t *TextFormatter) format(mbs *mrt.MrtBufferStack, _ MBSInfo) (string, error) {
 	ret := fmt.Sprintf("[%d] MRT Header: %s\n", t.msgNum, mbs.MrthBuf)
 	ret += fmt.Sprintf("BGP4MP Header: %s\n", mbs.Bgp4mpbuf)
 	ret += fmt.Sprintf("BGP Header: %s\n", mbs.Bgphbuf)
@@ -61,7 +72,7 @@ func NewJSONFormatter() JSONFormatter {
 	return JSONFormatter{}
 }
 
-func (j JSONFormatter) format(mbs *mrt.MrtBufferStack, _ []byte) (string, error) {
+func (j JSONFormatter) format(mbs *mrt.MrtBufferStack, _ MBSInfo) (string, error) {
 	mbsj, err := json.Marshal(mbs)
 	return string(mbsj) + "\n", err
 }
@@ -79,8 +90,8 @@ func NewIdentityFormatter() IdentityFormatter {
 	return IdentityFormatter{}
 }
 
-func (id IdentityFormatter) format(_ *mrt.MrtBufferStack, buf []byte) (string, error) {
-	return string(buf), nil
+func (id IdentityFormatter) format(_ *mrt.MrtBufferStack, inf MBSInfo) (string, error) {
+	return string(inf.raw), nil
 }
 
 // No summarization needed
@@ -89,16 +100,26 @@ func (id IdentityFormatter) summarize() {}
 // -------------------------------------------------------------
 type PrefixHistory struct {
 	Pref   string
+	Info   MBSInfo
 	Events []PrefixEvent
 }
 
-func NewPrefixHistory(pref string, firstTime time.Time, advert bool) *PrefixHistory {
+func NewPrefixHistory(pref string, info MBSInfo, firstTime time.Time, advert bool) *PrefixHistory {
 	pe := PrefixEvent{firstTime, advert}
-	return &PrefixHistory{pref, []PrefixEvent{pe}}
+	return &PrefixHistory{pref, info, []PrefixEvent{pe}}
 }
 
 func (ph *PrefixHistory) addEvent(timestamp time.Time, advert bool) {
 	ph.Events = append(ph.Events, PrefixEvent{timestamp, advert})
+}
+
+func (ph *PrefixHistory) String() string {
+	str := ph.Pref
+	if len(ph.Events) > 0 {
+		str += fmt.Sprintf(" %d", ph.Events[0].Timestamp.Unix())
+	}
+	str += debugSprintf(" %s[%d]", ph.Info.file, ph.Info.msgNum)
+	return str
 }
 
 type PrefixEvent struct {
@@ -126,19 +147,19 @@ func NewUniquePrefixList(fd *os.File) *UniquePrefixList {
 	return &upl
 }
 
-func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, _ []byte) (string, error) {
+func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, inf MBSInfo) (string, error) {
 
 	timestamp := getTimestamp(mbs)
 	advRoutes, err := getAdvertizedPrefixes(mbs)
 	// Do something with routes only if there is no error.
 	// Otherwise, move on to withdrawn routes
 	if err == nil {
-		upl.addRoutes(advRoutes, timestamp, true)
+		upl.addRoutes(advRoutes, inf, timestamp, true)
 	}
 
 	wdnRoutes, err := getWithdrawnPrefixes(mbs)
 	if err == nil {
-		upl.addRoutes(wdnRoutes, timestamp, false)
+		upl.addRoutes(wdnRoutes, inf, timestamp, false)
 	}
 	return "", nil
 }
@@ -146,7 +167,7 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, _ []byte) (string, 
 // If this finds a Route that is not present in the prefixes map,
 // adds it in. If it finds one, but these Routes have an earlier
 // timestamp, it replaces the old one.
-func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert bool) {
+func (upl *UniquePrefixList) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool) {
 	for _, route := range rts {
 		// Ignore this prefix, because it causes a lot of problems
 		if route.Mask == 1 {
@@ -156,11 +177,11 @@ func (upl *UniquePrefixList) addRoutes(rts []Route, timestamp time.Time, advert 
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		upl.mux.Lock()
 		if upl.prefixes[key] == nil {
-			upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
+			upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
 		} else {
 			oldT := upl.prefixes[key].(*PrefixHistory).Events[0].Timestamp
 			if oldT.After(timestamp) {
-				upl.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
+				upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
 			}
 		}
 		upl.mux.Unlock()
@@ -174,7 +195,7 @@ func (upl *UniquePrefixList) summarize() {
 	// Whatever is left should be output
 	for _, value := range upl.prefixes {
 		ph := value.(*PrefixHistory)
-		upl.output.WriteString(fmt.Sprintf("%s %d\n", ph.Pref, ph.Events[0].Timestamp.Unix()))
+		upl.output.WriteString(ph.String() + "\n")
 	}
 }
 
@@ -196,22 +217,22 @@ func NewUniquePrefixSeries(fd *os.File) *UniquePrefixSeries {
 	return &ups
 }
 
-func (ups *UniquePrefixSeries) format(mbs *mrt.MrtBufferStack, _ []byte) (string, error) {
+func (ups *UniquePrefixSeries) format(mbs *mrt.MrtBufferStack, inf MBSInfo) (string, error) {
 	timestamp := getTimestamp(mbs)
 
 	advRoutes, err := getAdvertizedPrefixes(mbs)
 	if err == nil {
-		ups.addRoutes(advRoutes, timestamp, true)
+		ups.addRoutes(advRoutes, inf, timestamp, true)
 	}
 
 	wdnRoutes, err := getWithdrawnPrefixes(mbs)
 	if err == nil {
-		ups.addRoutes(wdnRoutes, timestamp, false)
+		ups.addRoutes(wdnRoutes, inf, timestamp, false)
 	}
 	return "", nil
 }
 
-func (ups *UniquePrefixSeries) addRoutes(rts []Route, timestamp time.Time, advert bool) {
+func (ups *UniquePrefixSeries) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool) {
 	for _, route := range rts {
 		//This route causes a lot of trouble
 		if route.Mask == 1 {
@@ -221,7 +242,7 @@ func (ups *UniquePrefixSeries) addRoutes(rts []Route, timestamp time.Time, adver
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		ups.mux.Lock()
 		if ups.prefixes[key] == nil {
-			ups.prefixes[key] = NewPrefixHistory(route.String(), timestamp, advert)
+			ups.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
 		} else {
 			ups.prefixes[key].(*PrefixHistory).addEvent(timestamp, advert)
 		}

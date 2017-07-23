@@ -108,7 +108,7 @@ func dumpFile(name string, dc *DumpConfig) {
 
 		if filterAll(dc.filters, mbs) {
 			passedCt++
-			output, err := dc.fmtr.format(mbs, data)
+			output, err := dc.fmtr.format(mbs, NewMBSInfo(data, name, entryCt))
 			if err != nil {
 				dc.log.WriteString(fmt.Sprintf("%s\n", err))
 			} else {
@@ -189,4 +189,17 @@ func (mwf *MultiWriteFile) Close() error {
 	}
 
 	return mwf.base.Close()
+}
+
+func debugPrintf(format string, a ...interface{}) {
+	if DEBUG {
+		fmt.Printf(format, a)
+	}
+}
+
+func debugSprintf(format string, a ...interface{}) string {
+	if DEBUG {
+		return fmt.Sprintf(format, a...)
+	}
+	return ""
 }
