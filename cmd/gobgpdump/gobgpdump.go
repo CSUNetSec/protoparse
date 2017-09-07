@@ -164,23 +164,25 @@ func NewMultiWriteFile(fd *os.File) *MultiWriteFile {
 
 func (mwf *MultiWriteFile) WriteString(s string) (n int, err error) {
 	mwf.mx.Lock()
-	defer mwf.mx.Unlock()
 
 	// This is to trash output if it's directed to a file that doesn't exist
 	if mwf.base == nil {
 		return 0, nil
 	}
-	return mwf.base.WriteString(s)
+	n, err = mwf.base.WriteString(s)
+	mwf.mx.Unlock()
+	return
 }
 
 func (mwf *MultiWriteFile) Write(data []byte) (n int, err error) {
 	mwf.mx.Lock()
-	defer mwf.mx.Unlock()
 
 	if mwf.base == nil {
 		return 0, nil
 	}
-	return mwf.base.Write(data)
+	n, err = mwf.base.Write(data)
+	mwf.mx.Unlock()
+	return
 }
 
 func (mwf *MultiWriteFile) Close() error {

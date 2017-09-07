@@ -5,6 +5,7 @@
 // -getASPath (path, err := getASPath(mbs)
 // -getAdvertizedPrefixes (rts, err := getAdvertizedPrefixes(mbs)
 // -getWithdrawnPrefixes (rts, err := getWithdrawnPrefixes(mbs)
+// -getCollector (col := getCollector(mbs)
 
 package main
 
@@ -68,6 +69,13 @@ func getASPath(mbs *mrt.MrtBufferStack) ([]uint32, error) {
 		}
 	}
 	return aslist, nil
+}
+
+// This will get the collector IP that received the message from the
+// BGP4MP header
+func getCollector(mbs *mrt.MrtBufferStack) net.IP {
+	b4mph := mbs.Bgp4mpbuf.(protoparse.BGP4MPHeaderer).GetHeader()
+	return net.IP(util.GetIP(b4mph.LocalIp))
 }
 
 type Route struct {

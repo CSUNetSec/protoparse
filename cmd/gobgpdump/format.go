@@ -16,6 +16,7 @@ import (
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
 	util "github.com/CSUNetSec/protoparse/util"
 	radix "github.com/armon/go-radix"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -100,17 +101,17 @@ func (id IdentityFormatter) summarize() {}
 // -------------------------------------------------------------
 type PrefixHistory struct {
 	Pref   string
-	Info   MBSInfo
+	info   MBSInfo
 	Events []PrefixEvent
 }
 
-func NewPrefixHistory(pref string, info MBSInfo, firstTime time.Time, advert bool) *PrefixHistory {
-	pe := PrefixEvent{firstTime, advert}
+func NewPrefixHistory(pref string, info MBSInfo, firstTime time.Time, advert bool, asp []uint32) *PrefixHistory {
+	pe := PrefixEvent{firstTime, advert, asp}
 	return &PrefixHistory{pref, info, []PrefixEvent{pe}}
 }
 
-func (ph *PrefixHistory) addEvent(timestamp time.Time, advert bool) {
-	ph.Events = append(ph.Events, PrefixEvent{timestamp, advert})
+func (ph *PrefixHistory) addEvent(timestamp time.Time, advert bool, asp []uint32) {
+	ph.Events = append(ph.Events, PrefixEvent{timestamp, advert, asp})
 }
 
 func (ph *PrefixHistory) String() string {
@@ -118,13 +119,14 @@ func (ph *PrefixHistory) String() string {
 	if len(ph.Events) > 0 {
 		str += fmt.Sprintf(" %d", ph.Events[0].Timestamp.Unix())
 	}
-	str += debugSprintf(" %s[%d]", ph.Info.file, ph.Info.msgNum)
+	str += debugSprintf(" %s[%d]", ph.info.file, ph.info.msgNum)
 	return str
 }
 
 type PrefixEvent struct {
 	Timestamp  time.Time
 	Advertized bool
+	ASPath     []uint32
 }
 
 // ---------------------------------------------------------------
@@ -134,7 +136,7 @@ type PrefixEvent struct {
 // UniquePrefixList will look at all incoming messages, and output
 // only the top level prefixes seen.
 type UniquePrefixList struct {
-	output   *os.File // This should only be used in summarize
+	output   io.Writer // This should only be used in summarize
 	mux      *sync.Mutex
 	prefixes map[string]interface{}
 }
@@ -151,15 +153,20 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, inf MBSInfo) (strin
 
 	timestamp := getTimestamp(mbs)
 	advRoutes, err := getAdvertizedPrefixes(mbs)
+	asp, errasp := getASPath(mbs)
+	if errasp != nil || len(asp) == 0 {
+		//maybe just a withdrawn message? make it empty.
+		asp = []uint32{}
+	}
 	// Do something with routes only if there is no error.
 	// Otherwise, move on to withdrawn routes
 	if err == nil {
-		upl.addRoutes(advRoutes, inf, timestamp, true)
+		upl.addRoutes(advRoutes, inf, timestamp, true, asp)
 	}
 
 	wdnRoutes, err := getWithdrawnPrefixes(mbs)
 	if err == nil {
-		upl.addRoutes(wdnRoutes, inf, timestamp, false)
+		upl.addRoutes(wdnRoutes, inf, timestamp, false, asp)
 	}
 	return "", nil
 }
@@ -167,7 +174,7 @@ func (upl *UniquePrefixList) format(mbs *mrt.MrtBufferStack, inf MBSInfo) (strin
 // If this finds a Route that is not present in the prefixes map,
 // adds it in. If it finds one, but these Routes have an earlier
 // timestamp, it replaces the old one.
-func (upl *UniquePrefixList) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool) {
+func (upl *UniquePrefixList) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool, asp []uint32) {
 	for _, route := range rts {
 		// Ignore this prefix, because it causes a lot of problems
 		if route.Mask == 1 {
@@ -177,11 +184,11 @@ func (upl *UniquePrefixList) addRoutes(rts []Route, info MBSInfo, timestamp time
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		upl.mux.Lock()
 		if upl.prefixes[key] == nil {
-			upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
+			upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert, asp)
 		} else {
 			oldT := upl.prefixes[key].(*PrefixHistory).Events[0].Timestamp
 			if oldT.After(timestamp) {
-				upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
+				upl.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert, asp)
 			}
 		}
 		upl.mux.Unlock()
@@ -195,7 +202,8 @@ func (upl *UniquePrefixList) summarize() {
 	// Whatever is left should be output
 	for _, value := range upl.prefixes {
 		ph := value.(*PrefixHistory)
-		upl.output.WriteString(ph.String() + "\n")
+		str := ph.String() + "\n"
+		upl.output.Write([]byte(str))
 	}
 }
 
@@ -204,7 +212,7 @@ func (upl *UniquePrefixList) summarize() {
 // rather than just a list, it will output a gob file containing each
 // prefix and every event seen associated with that prefix
 type UniquePrefixSeries struct {
-	output   *os.File
+	output   io.Writer
 	mux      *sync.Mutex
 	prefixes map[string]interface{}
 }
@@ -221,18 +229,23 @@ func (ups *UniquePrefixSeries) format(mbs *mrt.MrtBufferStack, inf MBSInfo) (str
 	timestamp := getTimestamp(mbs)
 
 	advRoutes, err := getAdvertizedPrefixes(mbs)
+	asp, errasp := getASPath(mbs)
+	if errasp != nil || len(asp) == 0 {
+		//maybe just a withdrawn message? make it empty.
+		asp = []uint32{}
+	}
 	if err == nil {
-		ups.addRoutes(advRoutes, inf, timestamp, true)
+		ups.addRoutes(advRoutes, inf, timestamp, true, asp)
 	}
 
 	wdnRoutes, err := getWithdrawnPrefixes(mbs)
 	if err == nil {
-		ups.addRoutes(wdnRoutes, inf, timestamp, false)
+		ups.addRoutes(wdnRoutes, inf, timestamp, false, asp)
 	}
 	return "", nil
 }
 
-func (ups *UniquePrefixSeries) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool) {
+func (ups *UniquePrefixSeries) addRoutes(rts []Route, info MBSInfo, timestamp time.Time, advert bool, asp []uint32) {
 	for _, route := range rts {
 		//This route causes a lot of trouble
 		if route.Mask == 1 {
@@ -242,9 +255,9 @@ func (ups *UniquePrefixSeries) addRoutes(rts []Route, info MBSInfo, timestamp ti
 		key := util.IpToRadixkey(route.IP, route.Mask)
 		ups.mux.Lock()
 		if ups.prefixes[key] == nil {
-			ups.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert)
+			ups.prefixes[key] = NewPrefixHistory(route.String(), info, timestamp, advert, asp)
 		} else {
-			ups.prefixes[key].(*PrefixHistory).addEvent(timestamp, advert)
+			ups.prefixes[key].(*PrefixHistory).addEvent(timestamp, advert, asp)
 		}
 		ups.mux.Unlock()
 	}
@@ -253,13 +266,17 @@ func (ups *UniquePrefixSeries) addRoutes(rts []Route, info MBSInfo, timestamp ti
 // All output is done here
 func (ups *UniquePrefixSeries) summarize() {
 	g := gob.NewEncoder(ups.output)
+	var err error
 
 	deleteChildPrefixes(ups.prefixes)
 	// Whatever is left are top-level prefixes and should be
 	// encoded
 	for _, value := range ups.prefixes {
 		ph := value.(*PrefixHistory)
-		g.Encode(ph)
+		err = g.Encode(ph)
+		if err != nil {
+			fmt.Printf("Error marshalling gob:%s\n", err)
+		}
 	}
 }
 
@@ -291,5 +308,4 @@ func deleteChildPrefixes(pm map[string]interface{}) {
 		rTree.WalkPrefix(s, pw.subWalk)
 		return false
 	})
-
 }

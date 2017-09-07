@@ -92,7 +92,7 @@ func getDumpConfig() (*DumpConfig, error) {
 	if configFile.So == "stdout" {
 		stat = os.Stdout
 	} else {
-		stat, _ = os.Create(configFile.Do)
+		stat, _ = os.Create(configFile.So)
 	}
 	dc.stat = NewMultiWriteFile(stat)
 
