@@ -1,11 +1,11 @@
 // This file defines utility functions for MrtBufferStack's
-// Current Utility functions: name (example)
-// -parseHeaders (mbs, err := parseHeaders(data))
-// -getTimestamp (time := getTimestamp(mbs))
-// -getASPath (path, err := getASPath(mbs)
-// -getAdvertizedPrefixes (rts, err := getAdvertizedPrefixes(mbs)
-// -getWithdrawnPrefixes (rts, err := getWithdrawnPrefixes(mbs)
-// -getCollector (col := getCollector(mbs)
+// Current Utility functions
+// -parseHeaders
+// -getTimestamp
+// -getASPath
+// -getAdvertizedPrefixes
+// -getWithdrawnPrefixes
+// -getCollector
 
 package main
 

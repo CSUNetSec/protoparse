@@ -1,12 +1,14 @@
 // Defines all formatters available to gobgpdump, and convenience
 // functions for formatters.
 // Current formatters:
-// -TextFormatter (NewTextFormatter())
-// -JSONFormatter (NewJSONFormatter())
-// -IdentityFormatter (NewIdentityFormatter())
+// -TextFormatter
+// -JSONFormatter
+// -IdentityFormatter - Rename to MRTFormatter?
 
-// Also very incomplete, and original gobgpdump has bugs in this
-// area
+// These both need new configuration names
+// -UniquePrefixList
+// -UniquePrefixSeries
+
 package main
 
 import (
@@ -42,7 +44,6 @@ func NewMBSInfo(raw []byte, file string, msg int) MBSInfo {
 	return MBSInfo{raw, file, msg}
 }
 
-// -----------------------------------------------------------
 // A simple text representation for the dump.
 // The only formatter that needs the msgnum
 type TextFormatter struct {
@@ -65,7 +66,6 @@ func (t *TextFormatter) format(mbs *mrt.MrtBufferStack, _ MBSInfo) (string, erro
 // The text formatter doesn't need to summarize
 func (t *TextFormatter) summarize() {}
 
-// ------------------------------------------------------------
 // Formats each update as a JSON message
 type JSONFormatter struct{}
 
@@ -81,7 +81,6 @@ func (j JSONFormatter) format(mbs *mrt.MrtBufferStack, _ MBSInfo) (string, error
 // The JSON formatter doesn't need to summarize
 func (j JSONFormatter) summarize() {}
 
-// -------------------------------------------------------------
 // Applies no formatting to the data
 // But data is decompressed, may need to fix that
 // However, golang bz2 doesn't have compression features
@@ -98,7 +97,6 @@ func (id IdentityFormatter) format(_ *mrt.MrtBufferStack, inf MBSInfo) (string, 
 // No summarization needed
 func (id IdentityFormatter) summarize() {}
 
-// -------------------------------------------------------------
 type PrefixHistory struct {
 	Pref   string
 	info   MBSInfo
@@ -129,7 +127,6 @@ type PrefixEvent struct {
 	ASPath     []uint32
 }
 
-// ---------------------------------------------------------------
 // In original gobgpdump, the List and Series are the same struct.
 // Consider two separate structs
 
@@ -207,7 +204,6 @@ func (upl *UniquePrefixList) summarize() {
 	}
 }
 
-// -----------------------------------------------------------------
 // UniquePrefixSeries does the same thing as UniquePrefixList, but
 // rather than just a list, it will output a gob file containing each
 // prefix and every event seen associated with that prefix
