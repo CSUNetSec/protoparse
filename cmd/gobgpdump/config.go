@@ -152,7 +152,7 @@ func getFormatter(dumpOut *os.File) (fmtr Formatter) {
 	case "pts":
 		fmtr = NewUniquePrefixSeries(dumpOut)
 	case "day":
-		// TODO
+		fmtr = NewDayFormatter(dumpOut)
 	case "text":
 		fmtr = NewTextFormatter()
 	case "id":

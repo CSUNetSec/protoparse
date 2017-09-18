@@ -305,3 +305,24 @@ func deleteChildPrefixes(pm map[string]interface{}) {
 		return false
 	})
 }
+
+type DayFormatter struct {
+	output *os.File
+	hourCt []int
+}
+
+func NewDayFormatter(fd *os.File) *DayFormatter {
+	return &DayFormatter{fd, make([]int, 24)}
+}
+
+func (d *DayFormatter) format(mbs *mrt.MrtBufferStack, _ MBSInfo) (string, error) {
+	timestamp := getTimestamp(mbs)
+	d.hourCt[timestamp.Hour()]++
+	return "", nil
+}
+
+func (d *DayFormatter) summarize() {
+	for i := 0; i < len(d.hourCt); i++ {
+		d.output.WriteString(fmt.Sprintf("%d %d\n", i, d.hourCt[i]))
+	}
+}
