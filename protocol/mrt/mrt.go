@@ -35,6 +35,10 @@ type MrtBufferStack struct {
 	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
 }
 
+func (mbs *MrtBufferStack) GetRawMessage() []byte {
+	return mbs.MrthBuf.(*mrtHhdrBuf).buf
+}
+
 func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
 	mrth := NewMrtHdrBuf(data)
 	bgp4h, errmrt := mrth.Parse()
