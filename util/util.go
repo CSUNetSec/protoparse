@@ -19,7 +19,6 @@ func GetIP(a *pbcom.IPAddressWrapper) []byte {
 func IpToRadixkey(b []byte, mask uint8) string {
 	var (
 		ip     net.IP = b
-		max    int
 		buffer bytes.Buffer
 	)
 	if len(b) == 0 { // a misparsed ip probably.
@@ -28,14 +27,12 @@ func IpToRadixkey(b []byte, mask uint8) string {
 
 	if ip.To4() != nil {
 		ip = ip.Mask(net.CIDRMask(int(mask), 32)).To4()
-		max = 32
 	} else {
 		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
-		max = 128
 	}
 
-	for i := 0; i < len(ip) && i < int(max); i++ {
+	for i := 0; i < len(ip); i++ {
 		fmt.Fprintf(&buffer, "%08b", ip[i])
 	}
-	return buffer.String()[:max]
+	return buffer.String()
 }
