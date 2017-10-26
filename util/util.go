@@ -31,8 +31,8 @@ func IpToRadixkey(b []byte, mask uint8) string {
 		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
 	}
 
-	for i := 0; i < len(ip); i++ {
+	for i := 0; i < len(ip) && i < int(mask); i++ {
 		fmt.Fprintf(&buffer, "%08b", ip[i])
 	}
-	return buffer.String()
+	return buffer.String()[:mask]
 }
