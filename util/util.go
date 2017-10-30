@@ -21,13 +21,21 @@ func IpToRadixkey(b []byte, mask uint8) string {
 		ip     net.IP = b
 		buffer bytes.Buffer
 	)
-	if len(b) == 0 { // a misparsed ip probably.
+	if len(b) == 0 || len(ip) == 0 { // a misparsed ip probably.
 		return ""
 	}
 
 	if ip.To4() != nil {
+		if mask > 32 { //misparsed?
+			return ""
+		}
+		fmt.Printf("32\n")
 		ip = ip.Mask(net.CIDRMask(int(mask), 32)).To4()
 	} else {
+		if mask > 128 { //misparsed?
+			return ""
+		}
+		fmt.Printf("64\n")
 		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
 	}
 
