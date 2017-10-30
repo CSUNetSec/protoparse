@@ -29,13 +29,11 @@ func IpToRadixkey(b []byte, mask uint8) string {
 		if mask > 32 { //misparsed?
 			return ""
 		}
-		fmt.Printf("32\n")
 		ip = ip.Mask(net.CIDRMask(int(mask), 32)).To4()
 	} else {
 		if mask > 128 { //misparsed?
 			return ""
 		}
-		fmt.Printf("64\n")
 		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
 	}
 
