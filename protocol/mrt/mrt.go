@@ -11,6 +11,7 @@ import (
 	"github.com/CSUNetSec/protoparse"
 	pp "github.com/CSUNetSec/protoparse"
 	bgp "github.com/CSUNetSec/protoparse/protocol/bgp"
+	rib "github.com/CSUNetSec/protoparse/protocol/rib"
 	util "github.com/CSUNetSec/protoparse/util"
 	"net"
 	"time"
@@ -26,6 +27,7 @@ const (
 	MESSAGE_AS4_LOCAL = 7
 	TABLE_DUMP        = 12
 	TABLE_DUMP_V2     = 13
+	PEER_INDEX_TABLE  = 1
 )
 
 type MrtBufferStack struct {
@@ -75,16 +77,11 @@ type mrtHhdrBuf struct {
 	dest  *pbbgp.MrtHeader
 	buf   []byte
 	isrib bool
+	index pp.PbVal
 }
 
 type bgp4mpHdrBuf struct {
 	dest  *pbbgp.BGP4MPHeader
-	buf   []byte
-	isv6  bool
-	isAS4 bool
-}
-
-type ribBuf struct {
 	buf   []byte
 	isv6  bool
 	isAS4 bool
@@ -98,19 +95,21 @@ func NewMrtHdrBuf(buf []byte) *mrtHhdrBuf {
 	}
 }
 
+func NewRIBMrtHdrBuf(buf []byte, index pp.PbVal) *mrtHhdrBuf {
+	return &mrtHhdrBuf{
+		dest:  new(pbbgp.MrtHeader),
+		buf:   buf,
+		isrib: true,
+		index: index,
+	}
+}
+
 func NewBgp4mpHdrBuf(buf []byte, as4 bool) *bgp4mpHdrBuf {
 	return &bgp4mpHdrBuf{
 		dest:  new(pbbgp.BGP4MPHeader),
 		buf:   buf,
 		isAS4: as4,
 		isv6:  false,
-	}
-}
-
-func NewRibBuf(buf []byte, as4 bool) *ribBuf {
-	return &ribBuf{
-		buf:   buf,
-		isAS4: as4,
 	}
 }
 
@@ -121,14 +120,6 @@ func (m *mrtHhdrBuf) String() string {
 func (m *bgp4mpHdrBuf) String() string {
 	formatstr := "peer_as:%d local_as:%d interface_index:%d address_family:%d peer_ip:%s local_ip:%s"
 	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(util.GetIP(m.dest.PeerIp)), net.IP(util.GetIP(m.dest.LocalIp)))
-}
-
-func (r *ribBuf) String() string {
-	return "RIB"
-}
-
-func (r *ribBuf) Parse() (protoparse.PbVal, error) {
-	return nil, nil
 }
 
 func IsRib(a []byte) (bool, error) {
@@ -167,10 +158,16 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	//XXX: when we start to parse deeper we should remove the MRT header
 	case uint16(TABLE_DUMP):
 		mhb.isrib = true
-		return NewRibBuf(mhb.buf, false), nil
+		//return NewRibBuf(mhb.buf[MRT_HEADER_LEN:], false, false), nil
+		return nil, fmt.Errorf("TABLE_DUMP not implemented")
 	case uint16(TABLE_DUMP_V2):
 		mhb.isrib = true
-		return NewRibBuf(mhb.buf, true), nil
+		isInd := u16subtype == PEER_INDEX_TABLE
+		if isInd {
+			return rib.NewRibIndexBuf(mhb.buf[MRT_HEADER_LEN:]), nil
+		} else {
+			return rib.NewRibEntryBuf(mhb.buf[MRT_HEADER_LEN:], int(u16subtype), mhb.index), nil
+		}
 	}
 	return nil, errors.New("unsupported MRT type")
 }
