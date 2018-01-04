@@ -591,7 +591,12 @@ readattr:
 	case pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR)
 		//fmt.Printf(" [as4-aggregator] ")
-	case pbbgp.BGPUpdate_Attributes_ORIGINATOR_ID, pbbgp.BGPUpdate_Attributes_CLUSTER_LIST, pbbgp.BGPUpdate_Attributes_PMSI_TUNNEL, pbbgp.BGPUpdate_Attributes_TUNNEL_ENCAPSULATION_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_TRAFFIC_ENGINEERING, pbbgp.BGPUpdate_Attributes_IPV6_ADDRESS_SPECIFIC_EXTENDED_COMMUNITY, pbbgp.BGPUpdate_Attributes_AIGP, pbbgp.BGPUpdate_Attributes_PE_DISTINGUISHER_LABELS, pbbgp.BGPUpdate_Attributes_BGP_LS_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_LARGE_COMMUNITY, pbbgp.BGPUpdate_Attributes_BGPSEC_PATH, pbbgp.BGPUpdate_Attributes_ATTR_SET:
+	case pbbgp.BGPUpdate_Attributes_IPV6_ADDRESS_SPECIFIC_EXTENDED_COMMUNITY:
+		attrs.Types = append(attrs.Types, typebyte) // we just skip over the contents of the attribute for now.
+		//fmt.Printf(" [IPV6 extended community] ")
+		buf = buf[20:]
+		totskip += 20
+	case pbbgp.BGPUpdate_Attributes_ORIGINATOR_ID, pbbgp.BGPUpdate_Attributes_CLUSTER_LIST, pbbgp.BGPUpdate_Attributes_PMSI_TUNNEL, pbbgp.BGPUpdate_Attributes_TUNNEL_ENCAPSULATION_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_TRAFFIC_ENGINEERING, pbbgp.BGPUpdate_Attributes_AIGP, pbbgp.BGPUpdate_Attributes_PE_DISTINGUISHER_LABELS, pbbgp.BGPUpdate_Attributes_BGP_LS_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_LARGE_COMMUNITY, pbbgp.BGPUpdate_Attributes_BGPSEC_PATH, pbbgp.BGPUpdate_Attributes_ATTR_SET:
 		attrs.Types = append(attrs.Types, typebyte)
 	default:
 		//fmt.Printf("\nunknown type!\n")
