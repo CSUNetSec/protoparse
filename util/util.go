@@ -17,20 +17,28 @@ func GetIP(a *pbcom.IPAddressWrapper) []byte {
 }
 
 func IpToRadixkey(b []byte, mask uint8) string {
-	var ip net.IP = b
-	var buffer bytes.Buffer
-	for i := 0; i < len(b) && i < int(mask); i++ {
-		buffer.WriteString(fmt.Sprintf("%08b", b[i]))
+	var (
+		ip     net.IP = b
+		buffer bytes.Buffer
+	)
+	if len(b) == 0 || len(ip) == 0 { // a misparsed ip probably.
+		return ""
 	}
-	pref := ""
+
 	if ip.To4() != nil {
-		pref = "v4"
+		if mask > 32 { //misparsed?
+			return ""
+		}
+		ip = ip.Mask(net.CIDRMask(int(mask), 32)).To4()
 	} else {
-		pref = "v6"
+		if mask > 128 { //misparsed?
+			return ""
+		}
+		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
 	}
-	str := buffer.String()
-	if len(str) < int(mask) {
-		return pref + str
+
+	for i := 0; i < len(ip) && i < int(mask); i++ {
+		fmt.Fprintf(&buffer, "%08b", ip[i])
 	}
-	return pref + str[:mask]
+	return buffer.String()[:mask]
 }
