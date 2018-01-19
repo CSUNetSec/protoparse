@@ -243,6 +243,10 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 	return wpslice
 }
 
+func ParseAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
+	return readAttrs(buf, as4, v6)
+}
+
 //this function returns the attributes but also the withdrawn prefixes or advertised prefixes found in MP_REACH/UNREACH
 //because RFC2283 decided to shove that in the attributes. thanks ietf.
 func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
