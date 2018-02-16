@@ -25,3 +25,8 @@ type MRTHeaderer interface {
 	PbVal
 	GetHeader() *pbbgp.MrtHeader
 }
+
+type RIBHeaderer interface {
+	PbVal
+	GetHeader() *pbbgp.RIB
+}

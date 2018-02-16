@@ -88,9 +88,10 @@ func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
 	return ret
 }
 
+// Neither of these fields should be omitted
 type PrefixWrapper struct {
-	Prefix net.IP `json:"prefix,omitempty"`
-	Mask   uint32 `json:"mask,omitempty"`
+	Prefix net.IP `json:"prefix"`
+	Mask   uint32 `json:"mask"`
 }
 
 func NewPrefixWrapper(pw *pbcom.PrefixWrapper) *PrefixWrapper {
@@ -182,6 +183,45 @@ func (b *bgpUpdateBuf) String() string {
 	return ret
 }
 
+func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
+	ret := ""
+	if attrs != nil {
+		for _, seg := range attrs.AsPath {
+			ret += "AS-Path:"
+			if seg.AsSeq != nil {
+				ret += fmt.Sprintf(" (%v) ", seg.AsSeq)
+			}
+			if seg.AsSet != nil {
+				ret += fmt.Sprintf(" {%v} ", seg.AsSet)
+			}
+		}
+		if attrs.NextHop != nil {
+			ret += "\nNext-Hop:"
+			ret += fmt.Sprintf("%s", net.IP(util.GetIP(attrs.NextHop)))
+		}
+		if attrs.AtomicAggregate {
+			ret += "\nAtomic-Aggregate: true\n"
+		}
+		if attrs.Aggregator != nil {
+			ret += "\nAggregator:"
+			ret += fmt.Sprintf("AS:%d IP:%s", attrs.Aggregator.As, net.IP(util.GetIP(attrs.Aggregator.Ip)))
+		}
+		if attrs.Communities != nil {
+			ret += "\nCommunities:"
+			for _, com := range attrs.Communities.Communities {
+				if com.ExtendedCommunity != nil {
+					ret += fmt.Sprintf("Extended Community:%s", hex.EncodeToString(com.ExtendedCommunity))
+				} else if com.Community != nil {
+					ret += fmt.Sprintf("Community:%s", hex.EncodeToString(com.Community))
+				}
+			}
+		}
+		ret += "\n"
+	}
+
+	return ret
+}
+
 func (b *bgpHeaderBuf) Parse() (protoparse.PbVal, error) {
 	if len(b.buf) < 19 {
 		return nil, errors.New("not enough bytes to decode BGP header")
@@ -241,6 +281,10 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 		buf = buf[bytelen:] //advance the buffer to the next withdrawn route
 	}
 	return wpslice
+}
+
+func ParseAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
+	return readAttrs(buf, as4, v6)
 }
 
 //this function returns the attributes but also the withdrawn prefixes or advertised prefixes found in MP_REACH/UNREACH
