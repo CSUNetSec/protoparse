@@ -93,8 +93,13 @@ func (r *ribBuf) parseRIB() (pp.PbVal, error) {
 		prefWrapper.Mask = uint32(bitlen)
 		r.buf = r.buf[bytelen:]
 	} else {
-		prefWrapper.Prefix.Ipv4 = make([]byte, 4)
-		prefWrapper.Mask = 0
+		if r.isv6 {
+			prefWrapper.Prefix.Ipv6 = make([]byte, 16)
+			prefWrapper.Mask = 0
+		} else {
+			prefWrapper.Prefix.Ipv4 = make([]byte, 4)
+			prefWrapper.Mask = 0
+		}
 	}
 
 	if len(r.buf) < 2 {
