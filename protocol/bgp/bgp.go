@@ -88,9 +88,10 @@ func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
 	return ret
 }
 
+// Neither of these fields should be omitted
 type PrefixWrapper struct {
-	Prefix net.IP `json:"prefix,omitempty"`
-	Mask   uint32 `json:"mask,omitempty"`
+	Prefix net.IP `json:"prefix"`
+	Mask   uint32 `json:"mask"`
 }
 
 func NewPrefixWrapper(pw *pbcom.PrefixWrapper) *PrefixWrapper {
@@ -179,6 +180,45 @@ func (b *bgpUpdateBuf) String() string {
 		}
 		ret += "\n"
 	}
+	return ret
+}
+
+func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
+	ret := ""
+	if attrs != nil {
+		for _, seg := range attrs.AsPath {
+			ret += "AS-Path:"
+			if seg.AsSeq != nil {
+				ret += fmt.Sprintf(" (%v) ", seg.AsSeq)
+			}
+			if seg.AsSet != nil {
+				ret += fmt.Sprintf(" {%v} ", seg.AsSet)
+			}
+		}
+		if attrs.NextHop != nil {
+			ret += "\nNext-Hop:"
+			ret += fmt.Sprintf("%s", net.IP(util.GetIP(attrs.NextHop)))
+		}
+		if attrs.AtomicAggregate {
+			ret += "\nAtomic-Aggregate: true\n"
+		}
+		if attrs.Aggregator != nil {
+			ret += "\nAggregator:"
+			ret += fmt.Sprintf("AS:%d IP:%s", attrs.Aggregator.As, net.IP(util.GetIP(attrs.Aggregator.Ip)))
+		}
+		if attrs.Communities != nil {
+			ret += "\nCommunities:"
+			for _, com := range attrs.Communities.Communities {
+				if com.ExtendedCommunity != nil {
+					ret += fmt.Sprintf("Extended Community:%s", hex.EncodeToString(com.ExtendedCommunity))
+				} else if com.Community != nil {
+					ret += fmt.Sprintf("Community:%s", hex.EncodeToString(com.Community))
+				}
+			}
+		}
+		ret += "\n"
+	}
+
 	return ret
 }
 
