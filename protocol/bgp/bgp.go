@@ -88,9 +88,10 @@ func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
 	return ret
 }
 
+// Neither of these fields should be omitted
 type PrefixWrapper struct {
-	Prefix net.IP `json:"prefix,omitempty"`
-	Mask   uint32 `json:"mask,omitempty"`
+	Prefix net.IP `json:"prefix"`
+	Mask   uint32 `json:"mask"`
 }
 
 func NewPrefixWrapper(pw *pbcom.PrefixWrapper) *PrefixWrapper {
@@ -182,6 +183,45 @@ func (b *bgpUpdateBuf) String() string {
 	return ret
 }
 
+func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
+	ret := ""
+	if attrs != nil {
+		for _, seg := range attrs.AsPath {
+			ret += "AS-Path:"
+			if seg.AsSeq != nil {
+				ret += fmt.Sprintf(" (%v) ", seg.AsSeq)
+			}
+			if seg.AsSet != nil {
+				ret += fmt.Sprintf(" {%v} ", seg.AsSet)
+			}
+		}
+		if attrs.NextHop != nil {
+			ret += "\nNext-Hop:"
+			ret += fmt.Sprintf("%s", net.IP(util.GetIP(attrs.NextHop)))
+		}
+		if attrs.AtomicAggregate {
+			ret += "\nAtomic-Aggregate: true\n"
+		}
+		if attrs.Aggregator != nil {
+			ret += "\nAggregator:"
+			ret += fmt.Sprintf("AS:%d IP:%s", attrs.Aggregator.As, net.IP(util.GetIP(attrs.Aggregator.Ip)))
+		}
+		if attrs.Communities != nil {
+			ret += "\nCommunities:"
+			for _, com := range attrs.Communities.Communities {
+				if com.ExtendedCommunity != nil {
+					ret += fmt.Sprintf("Extended Community:%s", hex.EncodeToString(com.ExtendedCommunity))
+				} else if com.Community != nil {
+					ret += fmt.Sprintf("Community:%s", hex.EncodeToString(com.Community))
+				}
+			}
+		}
+		ret += "\n"
+	}
+
+	return ret
+}
+
 func (b *bgpHeaderBuf) Parse() (protoparse.PbVal, error) {
 	if len(b.buf) < 19 {
 		return nil, errors.New("not enough bytes to decode BGP header")
@@ -241,6 +281,10 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 		buf = buf[bytelen:] //advance the buffer to the next withdrawn route
 	}
 	return wpslice
+}
+
+func ParseAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
+	return readAttrs(buf, as4, v6)
 }
 
 //this function returns the attributes but also the withdrawn prefixes or advertised prefixes found in MP_REACH/UNREACH
@@ -591,6 +635,13 @@ readattr:
 	case pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR)
 		//fmt.Printf(" [as4-aggregator] ")
+	case pbbgp.BGPUpdate_Attributes_IPV6_ADDRESS_SPECIFIC_EXTENDED_COMMUNITY:
+		attrs.Types = append(attrs.Types, typebyte) // we just skip over the contents of the attribute for now.
+		//fmt.Printf(" [IPV6 extended community] ")
+		buf = buf[20:]
+		totskip += 20
+	case pbbgp.BGPUpdate_Attributes_ORIGINATOR_ID, pbbgp.BGPUpdate_Attributes_CLUSTER_LIST, pbbgp.BGPUpdate_Attributes_PMSI_TUNNEL, pbbgp.BGPUpdate_Attributes_TUNNEL_ENCAPSULATION_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_TRAFFIC_ENGINEERING, pbbgp.BGPUpdate_Attributes_AIGP, pbbgp.BGPUpdate_Attributes_PE_DISTINGUISHER_LABELS, pbbgp.BGPUpdate_Attributes_BGP_LS_ATTRIBUTE, pbbgp.BGPUpdate_Attributes_LARGE_COMMUNITY, pbbgp.BGPUpdate_Attributes_BGPSEC_PATH, pbbgp.BGPUpdate_Attributes_ATTR_SET:
+		attrs.Types = append(attrs.Types, typebyte)
 	default:
 		//fmt.Printf("\nunknown type!\n")
 		return attrs, fmt.Errorf(" [unknown type %d] ", typebyte), nil, nil
