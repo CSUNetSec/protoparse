@@ -219,9 +219,15 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 
 	var asNum uint32
 	if as4 {
+		if len(r.buf) < 4 {
+			return nil, fmt.Errorf("rib: Buffer too small to read AS number")
+		}
 		asNum = binary.BigEndian.Uint32(r.buf[:4])
 		r.buf = r.buf[4:]
 	} else {
+		if len(r.buf) < 2 {
+			return nil, fmt.Errorf("rib: Buffer too small to read AS number")
+		}
 		asNum = uint32(binary.BigEndian.Uint16(r.buf[:2]))
 		r.buf = r.buf[2:]
 	}
