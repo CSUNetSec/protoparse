@@ -35,10 +35,16 @@ type MrtBufferStack struct {
 	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
 	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
 	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
+
+	Ribbuf protoparse.PbVal `json:"rib_entry,omitempty"`
 }
 
 func (mbs *MrtBufferStack) GetRawMessage() []byte {
 	return mbs.MrthBuf.(*mrtHhdrBuf).buf
+}
+
+func (mbs *MrtBufferStack) IsRibStack() bool {
+	return mbs.Ribbuf != nil
 }
 
 func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
@@ -158,7 +164,6 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 	//XXX: when we start to parse deeper we should remove the MRT header
 	case uint16(TABLE_DUMP):
 		mhb.isrib = true
-		//return NewRibBuf(mhb.buf[MRT_HEADER_LEN:], false, false), nil
 		return nil, fmt.Errorf("TABLE_DUMP not implemented")
 	case uint16(TABLE_DUMP_V2):
 		mhb.isrib = true

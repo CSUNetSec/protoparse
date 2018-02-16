@@ -2,6 +2,7 @@ package rib
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
@@ -66,7 +67,6 @@ func (r *ribBuf) parseRIB() (pp.PbVal, error) {
 		return nil, fmt.Errorf("Buffer too small to parse prefix. Buffer size:%d Prefix Size: %d\n", len(r.buf), bytelen)
 	}
 
-	fmt.Printf("Bitlen: %d\n", bitlen)
 	pbuf := make([]byte, bytelen)
 	prefWrapper := new(pbcom.PrefixWrapper)
 	prefWrapper.Prefix = new(pbcom.IPAddressWrapper)
@@ -97,14 +97,11 @@ func (r *ribBuf) parseRIB() (pp.PbVal, error) {
 		prefWrapper.Mask = 0
 	}
 
-	fmt.Printf("Prefix: %s/%d\n", net.IP(util.GetIP(prefWrapper.Prefix)), bitlen)
-
 	if len(r.buf) < 2 {
 		return nil, fmt.Errorf("rib: Buffer too small to read entry count")
 	}
 	entryCount := int(binary.BigEndian.Uint16(r.buf[:2]))
 	r.buf = r.buf[2:]
-	fmt.Printf("Entry Count: %d\n", entryCount)
 
 	routes := make([]*pbbgp.RIBEntry, entryCount)
 	for i := 0; i < entryCount; i++ {
@@ -127,11 +124,9 @@ func (r *ribBuf) parseRIBEntry(pref *pbcom.PrefixWrapper) (*pbbgp.RIBEntry, erro
 	}
 	re.PeerIndex = uint32(binary.BigEndian.Uint16(r.buf[:2]))
 	r.buf = r.buf[2:]
-	fmt.Printf("Peer Index: %d\n", re.PeerIndex)
 
 	re.Timestamp = binary.BigEndian.Uint32(r.buf[:4])
 	r.buf = r.buf[4:]
-	fmt.Printf("Timestamp: %s\n", time.Unix(int64(re.Timestamp), 0).UTC())
 
 	attrLen := int(binary.BigEndian.Uint16(r.buf[:2]))
 	r.buf = r.buf[2:]
@@ -150,7 +145,8 @@ func (r *ribBuf) parseRIBEntry(pref *pbcom.PrefixWrapper) (*pbbgp.RIBEntry, erro
 }
 
 func (r *ribBuf) parseIndexTable() (pp.PbVal, error) {
-	//If the buffer is too short to read View length
+	// buf[0:4] is Collector BGP ID
+
 	if len(r.buf) < 6 {
 		return nil, fmt.Errorf("rib: Buffer too small to read view length")
 	}
@@ -168,12 +164,8 @@ func (r *ribBuf) parseIndexTable() (pp.PbVal, error) {
 	peerCount := int(binary.BigEndian.Uint16(r.buf[:2]))
 	r.buf = r.buf[2:]
 
-	//TODO: Comment out
-	//fmt.Printf("Peer Count: %d\n", peerCount)
-
 	peers := make([]*pbbgp.PeerEntry, peerCount)
 	for i := 0; i < peerCount; i++ {
-		//fmt.Printf("Peer #%d\n", i)
 		p, err := r.parsePeerEntry()
 		if err != nil {
 			return nil, err
@@ -185,8 +177,6 @@ func (r *ribBuf) parseIndexTable() (pp.PbVal, error) {
 }
 
 func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
-	//TODO: Comment out
-	//fmt.Printf("Parsing peer\n")
 
 	if len(r.buf) < 1 {
 		return nil, fmt.Errorf("rib: Buffer too small to read peer type")
@@ -196,9 +186,6 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 
 	as4 := (peerType&0x2 != 0)
 	ipv6 := (peerType&0x1 != 0)
-
-	//TODO: Comment out
-	//fmt.Printf("IPV6: %v AS4: %v\n", ipv6, as4)
 
 	if len(r.buf) < 4 {
 		return nil, fmt.Errorf("rib: Buffer too small to read BGP id")
@@ -217,7 +204,7 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 		peerIP.Ipv6 = ipbuf
 	} else {
 		ipbuf := make([]byte, 4)
-		if len(r.buf) < 16 {
+		if len(r.buf) < 4 {
 			return nil, fmt.Errorf("rib: Buffer too small to read peer ipv4")
 		}
 		copy(ipbuf, r.buf[:4])
@@ -239,29 +226,91 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 	pe.PeerAs = asNum
 	pe.PeerIp = peerIP
 
-	//fmt.Printf("%s\n", peerToString(pe))
-
 	return pe, nil
+}
+
+func (r *ribBuf) GetHeader() *pbbgp.RIB {
+	return r.dest
 }
 
 func (r *ribBuf) String() string {
 	str := ""
 	if r.isIndex {
-		str += fmt.Sprintf("Collector ID: \nView Name: \nPeer Count: %d\n", len(r.dest.PeerEntry))
+		str += fmt.Sprintf("Peer Count: %d\n", len(r.dest.PeerEntry))
 		str += "Peers:\n"
 		for i := 0; i < len(r.dest.PeerEntry); i++ {
-			str += peerToString(r.dest.PeerEntry[i])
+			str += peerToString(r.dest.PeerEntry[i]) + "\n"
 		}
 	} else {
 		if len(r.dest.RouteEntry) > 0 {
-			pref := r.dest.RouteEntry[0].Prefix
-			str += fmt.Sprintf("Prefix: %s/%d\n", net.IP(util.GetIP(pref.GetPrefix())), pref.Mask)
-			str += fmt.Sprintf("Associated RIB entries: %d\n", len(r.dest.RouteEntry))
+			str += fmt.Sprintf("ENTRIES: %d\n", len(r.dest.RouteEntry))
+			for i := 0; i < len(r.dest.RouteEntry); i++ {
+				str += ribEntryToString(r.dest.RouteEntry[i], r.index) + "\n"
+			}
 		}
 	}
 	return str
 }
 
 func peerToString(p *pbbgp.PeerEntry) string {
-	return fmt.Sprintf("ID: %d AS: %d IP: %s\n", p.PeerId, p.PeerAs, net.IP(util.GetIP(p.PeerIp)))
+	return fmt.Sprintf("%s AS%d", net.IP(util.GetIP(p.PeerIp)), p.PeerAs)
+}
+
+func ribEntryToString(r *pbbgp.RIBEntry, index pp.PbVal) string {
+	ind := index.(*ribBuf)
+	peer := ind.dest.PeerEntry[r.PeerIndex]
+	pref := r.Prefix
+	prefString := fmt.Sprintf("%s/%d", net.IP(util.GetIP(pref.GetPrefix())), pref.Mask)
+	str := fmt.Sprintf("PREFIX: %s\n", prefString)
+	str += fmt.Sprintf("FROM: %s\n", peerToString(peer))
+	str += fmt.Sprintf("ORIGINATED: %s\n", time.Unix(int64(r.Timestamp), 0))
+	str += bgp.AttrToString(r.Attrs)
+
+	return str
+}
+
+func (r *ribBuf) MarshalJSON() ([]byte, error) {
+	return json.Marshal(newribHeaderWrapper(r))
+}
+
+type ribHeaderWrapper struct {
+	Prefix *bgp.PrefixWrapper
+	Events []*ribEventWrapper
+}
+
+func newribHeaderWrapper(r *ribBuf) *ribHeaderWrapper {
+	rh := ribHeaderWrapper{}
+	rh.Prefix = bgp.NewPrefixWrapper(r.dest.RouteEntry[0].Prefix)
+	rh.Events = make([]*ribEventWrapper, len(r.dest.RouteEntry))
+
+	for i := 0; i < len(r.dest.RouteEntry); i++ {
+		rh.Events[i] = newribEventWrapper(r.dest.RouteEntry[i], r.index.(*ribBuf))
+	}
+	return &rh
+}
+
+type ribEventWrapper struct {
+	Peer       *ribPeerWrapper
+	Originated time.Time
+	Attrs      *bgp.AttrsWrapper
+}
+
+func newribEventWrapper(rib *pbbgp.RIBEntry, ind *ribBuf) *ribEventWrapper {
+	rew := ribEventWrapper{}
+	rew.Peer = newribPeerWrapper(ind.dest.PeerEntry[rib.PeerIndex])
+	rew.Originated = time.Unix(int64(rib.Timestamp), 0)
+	rew.Attrs = bgp.NewAttrsWrapper(rib.Attrs)
+	return &rew
+}
+
+type ribPeerWrapper struct {
+	*pbbgp.PeerEntry
+	Peer_ip net.IP `json:"peer_ip"`
+}
+
+func newribPeerWrapper(p *pbbgp.PeerEntry) *ribPeerWrapper {
+	rpw := ribPeerWrapper{}
+	rpw.PeerEntry = p
+	rpw.Peer_ip = net.IP(util.GetIP(p.PeerIp))
+	return &rpw
 }
