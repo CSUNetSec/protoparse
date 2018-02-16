@@ -5,6 +5,7 @@
  current protocols:
  - MRT (BGP4MP)
  - BGP
+ - RIB
 
  The main interface in protoparse is PbVal and the types that implement it
  are structures that usually have a buf []byte buffer that as the messages are
@@ -15,7 +16,6 @@
  recurse in the container formats while populating the internal protocol buffer messages.
 
 [commands]
- gobgpdump: dumps entries in an MRT update file with BGP4MP entries
  recordfilegen: generated go code to store and retrieve generic records based on the type
                 that the user provides as arguments
 
@@ -28,7 +28,4 @@
 
 [TODO]
  - more protocols
- - MRT RIB dumps
- - gobgpdump tool support for more outputs (json).
- - gobgpdump tool to dump in len prefixed protobuf files
  - godoc
