@@ -47,10 +47,6 @@ func (mbs *MrtBufferStack) IsRibStack() bool {
 	return mbs.Ribbuf != nil
 }
 
-func (mbs *MrtBufferStack) GetRawMessage() []byte {
-	return mbs.MrthBuf.(*mrtHhdrBuf).buf
-}
-
 func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
 	mrth := NewMrtHdrBuf(data)
 	bgp4h, errmrt := mrth.Parse()
