@@ -6,6 +6,7 @@ import (
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	radix "github.com/armon/go-radix"
 	"net"
+	"strconv"
 )
 
 func GetIP(a *pbcom.IPAddressWrapper) []byte {
@@ -17,6 +18,10 @@ func GetIP(a *pbcom.IPAddressWrapper) []byte {
 	return nil
 }
 
+//creates a binary string representation of an IP
+//address. the length is 32 chars for ipv4 and 128
+//chars for ipv6. The mask is applied and zeroes out
+//the bits it masks out on the resulting string.
 func IpToRadixkey(b []byte, mask uint8) string {
 	var (
 		ip     net.IP = b
@@ -42,6 +47,16 @@ func IpToRadixkey(b []byte, mask uint8) string {
 		fmt.Fprintf(&buffer, "%08b", ip[i])
 	}
 	return buffer.String()
+}
+
+//helper that just converts a possible mask string
+//to a 10 based uint8.
+func MaskStrToUint8(m string) (uint8, error) {
+	mask, err := strconv.ParseUint(m, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return uint8(mask), nil
 }
 
 //PrefixTree holds a radix tree which clients
