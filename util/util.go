@@ -37,8 +37,20 @@ func IpToRadixkey(b []byte, mask uint8) string {
 		ip = ip.Mask(net.CIDRMask(int(mask), 128)).To16()
 	}
 
-	for i := 0; i < len(ip) && i < int(mask); i++ {
+	for i := 0; i < len(ip); i++ {
 		fmt.Fprintf(&buffer, "%08b", ip[i])
+	}
+	return buffer.String()
+}
+
+//help functions for storing IPs in the radix tree
+func IpToRadixkey2(b []byte, mask uint8) string {
+	var buffer bytes.Buffer
+	for i := 0; i < len(b) && i < int(mask); i++ {
+		buffer.WriteString(fmt.Sprintf("%08b", b[i]))
+	}
+	if int(mask) > len(buffer.String()) {
+		return buffer.String()
 	}
 	return buffer.String()[:mask]
 }
