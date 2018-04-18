@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
+	radix "github.com/armon/go-radix"
 	"net"
 )
 
@@ -43,14 +44,28 @@ func IpToRadixkey(b []byte, mask uint8) string {
 	return buffer.String()
 }
 
-//help functions for storing IPs in the radix tree
-func IpToRadixkey2(b []byte, mask uint8) string {
-	var buffer bytes.Buffer
-	for i := 0; i < len(b) && i < int(mask); i++ {
-		buffer.WriteString(fmt.Sprintf("%08b", b[i]))
+//PrefixTree holds a radix tree which clients
+//can insert ips and masks in , and  also lookup
+//for their existence.
+type PrefixTree struct {
+	rt *radix.Tree
+}
+
+func NewPrefixTree() PrefixTree {
+	return PrefixTree{
+		rt: radix.New(),
 	}
-	if int(mask) > len(buffer.String()) {
-		return buffer.String()
+}
+
+func (pt PrefixTree) Add(ip net.IP, mask uint8) {
+	keystr := IpToRadixkey(ip, mask)
+	pt.rt.Insert(keystr, true)
+}
+
+func (pt PrefixTree) ContainsIpMask(ip net.IP, mask uint8) bool {
+	keystr := IpToRadixkey(ip, mask)
+	if _, _, found := pt.rt.LongestPrefix(keystr); found {
+		return true
 	}
-	return buffer.String()[:mask]
+	return false
 }
