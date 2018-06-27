@@ -17,10 +17,10 @@ type PrefixFilter struct {
 	pt       pu.PrefixTree
 }
 
-func NewPrefixFilter(raw string) Filter {
+func NewPrefixFilterFromString(raw string, sep string) Filter {
 	pf := PrefixFilter{}
 	pf.pt = pu.NewPrefixTree()
-	prefstrings := strings.Split(raw, ",")
+	prefstrings := strings.Split(raw, sep)
 	for _, p := range prefstrings {
 		parts := strings.Split(p, "/")
 		if len(parts) != 2 {
