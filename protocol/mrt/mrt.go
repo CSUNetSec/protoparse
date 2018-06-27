@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	monpb "github.com/CSUNetSec/netsec-protobufs/bgpmon"
+	monpb2 "github.com/CSUNetSec/netsec-protobufs/bgpmon/v2"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
 	"github.com/CSUNetSec/protoparse"
@@ -30,23 +31,6 @@ const (
 	PEER_INDEX_TABLE  = 1
 )
 
-type MrtBufferStack struct {
-	MrthBuf   protoparse.PbVal `json:"mrt_header,omitempty"`
-	Bgp4mpbuf protoparse.PbVal `json:"bgp4mp_header,omitempty"`
-	Bgphbuf   protoparse.PbVal `json:"bgp_header,omitempty"`
-	Bgpupbuf  protoparse.PbVal `json:"bgp_update,omitempty"`
-
-	Ribbuf protoparse.PbVal `json:"rib_entry,omitempty"`
-}
-
-func (mbs *MrtBufferStack) GetRawMessage() []byte {
-	return mbs.MrthBuf.(*mrtHhdrBuf).buf
-}
-
-func (mbs *MrtBufferStack) IsRibStack() bool {
-	return mbs.Ribbuf != nil
-}
-
 func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
 	mrth := NewMrtHdrBuf(data)
 	bgp4h, errmrt := mrth.Parse()
@@ -66,6 +50,38 @@ func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
 		return nil, fmt.Errorf("Failed parsing BGP Update:%s\n", errup)
 	}
 	capture := new(monpb.BGPCapture)
+	bgphpb := bgp4h.(pp.BGP4MPHeaderer).GetHeader()
+	mrtpb := mrth.GetHeader()
+	capture.Timestamp = mrtpb.Timestamp
+	capture.PeerAs = bgphpb.PeerAs
+	capture.LocalAs = bgphpb.LocalAs
+	capture.InterfaceIndex = bgphpb.InterfaceIndex
+	capture.AddressFamily = bgphpb.AddressFamily
+	capture.PeerIp = bgphpb.PeerIp
+	capture.LocalIp = bgphpb.LocalIp
+	capture.Update = bgpup.(pp.BGPUpdater).GetUpdate()
+	return capture, nil
+}
+
+func MrtToBGPCapturev2(data []byte) (*monpb2.BGPCapture, error) {
+	mrth := NewMrtHdrBuf(data)
+	bgp4h, errmrt := mrth.Parse()
+	if errmrt != nil {
+		return nil, fmt.Errorf("Failed parsing MRT header:%s\n", errmrt)
+	}
+	bgph, errbgph := bgp4h.Parse()
+	if errbgph != nil {
+		return nil, fmt.Errorf("Failed parsing BGP4MP header:%s\n", errbgph)
+	}
+	bgpup, errbgpup := bgph.Parse()
+	if errbgpup != nil {
+		return nil, fmt.Errorf("Failed parsing BGP Header:%s\n", errbgpup)
+	}
+	_, errup := bgpup.Parse()
+	if errup != nil {
+		return nil, fmt.Errorf("Failed parsing BGP Update:%s\n", errup)
+	}
+	capture := new(monpb2.BGPCapture)
 	bgphpb := bgp4h.(pp.BGP4MPHeaderer).GetHeader()
 	mrtpb := mrth.GetHeader()
 	capture.Timestamp = mrtpb.Timestamp
