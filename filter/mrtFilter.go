@@ -5,6 +5,7 @@ import (
 	"fmt"
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
 	pu "github.com/CSUNetSec/protoparse/util"
+	"github.com/pkg/errors"
 	"net"
 	"strconv"
 	"strings"
@@ -17,27 +18,31 @@ type PrefixFilter struct {
 	pt       pu.PrefixTree
 }
 
-func NewPrefixFilterFromString(raw string, sep string) Filter {
+func NewPrefixFilterFromString(raw string, sep string) (Filter, error) {
+	prefstrings := strings.Split(raw, sep)
+	return NewPrefixFilterFromSlice(prefstrings)
+}
+
+func NewPrefixFilterFromSlice(prefstrings []string) (Filter, error) {
 	pf := PrefixFilter{}
 	pf.pt = pu.NewPrefixTree()
-	prefstrings := strings.Split(raw, sep)
 	for _, p := range prefstrings {
 		parts := strings.Split(p, "/")
 		if len(parts) != 2 {
-			panic("malformed prefix string")
+			return nil, errors.New("malformed prefix string")
 		}
 		mask, err := pu.MaskStrToUint8(parts[1])
 		if err != nil {
-			panic(fmt.Sprintf("error parsing mask:%s err:%s", parts[1], err))
+			return nil, errors.Wrap(err, fmt.Sprintf("can not parse mask:%s", parts[1]))
 		}
 		parsedip := net.ParseIP(parts[0])
 		if parsedip == nil {
-			panic(fmt.Sprintf("malformed IP address:%s", parts[0]))
+			return nil, errors.New(fmt.Sprintf("malformed IP address:%s", parts[0]))
 		}
 		pf.pt.Add(parsedip, mask)
 	}
 	pf.prefixes = prefstrings
-	return pf.filterBySeen
+	return pf.filterBySeen, nil
 }
 
 func (pf PrefixFilter) filterBySeen(mbs *mrt.MrtBufferStack) bool {
@@ -65,21 +70,39 @@ type ASFilter struct {
 	asList []uint32
 }
 
+type ASPosition uint32
+
+const (
+	AS_SOURCE = ASPosition(iota)
+	AS_DESTINATION
+	AS_MIDPATH
+	AS_ANYWHERE
+)
+
 // Returns an AS filter with the list of AS's in the form "1,2,3,4"
 // If src is true, filters messages by source AS number
 // otherwise filters by destination AS number
-func NewASFilter(list string, src bool) (Filter, error) {
+func NewASFilter(list string, pos ASPosition) (Filter, error) {
 	aslist, err := parseASList(list)
 	if err != nil {
 		return nil, err
 	}
+	return NewASFilterFromSlice(aslist, pos)
+}
 
+func NewASFilterFromSlice(aslist []uint32, pos ASPosition) (Filter, error) {
 	asf := ASFilter{aslist}
-	if src {
+	switch pos {
+	case AS_SOURCE:
 		return asf.FilterBySource, nil
-	} else {
+	case AS_DESTINATION:
 		return asf.FilterByDest, nil
+	case AS_MIDPATH:
+		return asf.FilterByMidPath, nil
+	case AS_ANYWHERE:
+		return asf.FilterByAnywhere, nil
 	}
+	return nil, errors.New("unsupported AS position argument")
 }
 
 func (asf ASFilter) FilterBySource(mbs *mrt.MrtBufferStack) bool {
@@ -98,6 +121,36 @@ func (asf ASFilter) FilterByDest(mbs *mrt.MrtBufferStack) bool {
 	}
 
 	return asf.matchesOne(path[0])
+}
+
+func (asf ASFilter) FilterByMidPath(mbs *mrt.MrtBufferStack) bool {
+	path, err := mrt.GetASPath(mbs)
+	if err != nil || len(path) < 3 {
+		return false
+	}
+
+	for _, as := range path[1 : len(path)-1] {
+		if asf.matchesOne(as) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (asf ASFilter) FilterByAnywhere(mbs *mrt.MrtBufferStack) bool {
+	path, err := mrt.GetASPath(mbs)
+	if err != nil || len(path) < 1 {
+		return false
+	}
+
+	for _, as := range path {
+		if asf.matchesOne(as) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Convenience function used by both FilterBySrc/Dest
