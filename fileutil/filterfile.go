@@ -27,7 +27,7 @@ func (f FilterFile) getFilters() ([]filter.Filter, error) {
 		}
 	}
 	if len(f.SourceAses) > 0 {
-		if fil, err := filterNewASFilterFromSlice(f.SourceAses, filter.AS_SOURCE); err != nil {
+		if fil, err := filter.NewASFilterFromSlice(f.SourceAses, filter.AS_SOURCE); err != nil {
 			return nil, errors.Wrap(err, "can not create source AS filter from conf")
 		} else {
 			ret = append(ret, fil)
@@ -61,13 +61,12 @@ func (f FilterFile) getFilters() ([]filter.Filter, error) {
 }
 
 func NewFiltersFromFile(a string) ([]filter.Filter, error) {
+	var ff FilterFile
 	if contents, err := ioutil.ReadFile(a); err != nil {
 		return nil, err
-	} else {
-		ff := FilerFile{}
-		if err := json.Unmarshal(contents, &ff); err != nil {
-			return nil, errors.Wrap(err, "json unmarshal")
-		}
-		return ff.getFilters()
 	}
+	if err := json.Unmarshal(contents, &ff); err != nil {
+		return nil, errors.Wrap(err, "json unmarshal")
+	}
+	return ff.getFilters()
 }
