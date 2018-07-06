@@ -13,10 +13,12 @@ import (
 )
 
 type mrtReader struct {
-	in      io.ReadCloser
-	scanner *bufio.Scanner
-	filters []filter.Filter
-	err     error
+	in         io.ReadCloser
+	scanner    *bufio.Scanner
+	filters    []filter.Filter
+	err        error
+	lastTok    *monpb.BGPCapture
+	lastTokErr error
 }
 
 //NewMrtFileReader creates a wrapper around an open MRT file. After succesfull invocation
@@ -31,49 +33,66 @@ func NewMrtFileReader(fname string, filters []filter.Filter) (*mrtReader, error)
 	} else {
 		scanner := getScanner(fp)
 		ret := &mrtReader{
-			in:      fp,
-			scanner: scanner,
-			filters: filters,
-			err:     nil,
+			in:         fp,
+			scanner:    scanner,
+			filters:    filters,
+			err:        nil,
+			lastTok:    nil,
+			lastTokErr: nil,
 		}
 		return ret, nil
 	}
 }
 
-//Scan returns the next MRT entry as a BGPCapture protobuf along
-//with a conversion error. If there is a scanning error, Scan
+//Scan returns true if there is a next entry that can be returned as a BGP capture
+//and passes filters. If there is a scanning error, Scan
 //becomes a no op. If a message does not pass filters it scans
-//until one that does
-func (m *mrtReader) Scan() (*monpb.BGPCapture, error) {
-	if m.err != nil { //make scan a no op if err
-		return nil, nil
+//until one that does.
+func (m *mrtReader) Scan() bool {
+	if m.err != nil { //make Scan a no op if there is an error
+		return false
 	}
 rescan:
-	m.scanner.Scan()
+	if !m.scanner.Scan() { // internal scan finished? we finish too.
+		return false
+	}
 	if m.err = m.scanner.Err(); m.err != nil {
-		return nil, nil //this error will be checked on the Error() call
+		return false //this error will be checked on the Err() call
 	}
 	bytes := m.scanner.Bytes()
 	if mbs, err := mrt.ParseHeaders(bytes, false); err != nil { //false for no rib.
-		return nil, errors.Wrap(err, "parseHeaders")
+		m.lastTok = nil
+		m.lastTokErr = errors.Wrap(err, "parseHeaders")
 	} else {
 		if filter.FilterAll(m.filters, mbs) { //passes filters?
 			if pb, err := mrt.MrtToBGPCapturev2(m.scanner.Bytes()); err != nil {
-				return nil, errors.Wrap(err, "MrtToBGPCapture")
+				m.lastTok = nil
+				m.lastTokErr = errors.Wrap(err, "MrtToBGPCapture")
 			} else {
-				return pb, nil
+				m.lastTok = pb // successfully got next token
+				m.lastTokErr = nil
 			}
 		} else {
 			goto rescan
 		}
 	}
+	return true
 }
 
+//GetCapture returns the current scanned capture along with a possible error while
+//unmarshalling it from the binary data.
+func (m *mrtReader) GetCapture() (*monpb.BGPCapture, error) {
+	return m.lastTok, m.lastTokErr
+}
+
+//Close closes the underlying reader
 func (m *mrtReader) Close() {
 	m.in.Close()
 }
 
-func (m *mrtReader) Error() error {
+//Err shows errors that might have occured in the underlying bufio scanner.
+//this errors would make Scan a no op.
+func (m *mrtReader) Err() error {
 	return m.err
 }
 
