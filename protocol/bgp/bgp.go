@@ -172,9 +172,17 @@ func (b *bgpUpdateBuf) String() string {
 			ret += "\nCommunities:"
 			for _, com := range b.dest.Attrs.Communities.Communities {
 				if com.ExtendedCommunity != nil {
+					// Extended communities are 8 octet values
 					ret += fmt.Sprintf("Extended Community:%s\n", hex.EncodeToString(com.ExtendedCommunity))
 				} else if com.Community != nil {
-					ret += fmt.Sprintf("Community:%s\n", hex.EncodeToString(com.Community))
+					comStr := ""
+					// Each community is described in 4 bytes
+					for i := 0; i < len(com.Community); i += 4 {
+						first := binary.BigEndian.Uint16(com.Community[i : i+2])
+						sec := binary.BigEndian.Uint16(com.Community[i+2 : i+4])
+						comStr += fmt.Sprintf(" %d:%d", first, sec)
+					}
+					ret += fmt.Sprintf("Community:%s", comStr)
 				}
 			}
 		}
@@ -210,9 +218,16 @@ func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
 			ret += "\nCommunities:"
 			for _, com := range attrs.Communities.Communities {
 				if com.ExtendedCommunity != nil {
-					ret += fmt.Sprintf("Extended Community:%s", hex.EncodeToString(com.ExtendedCommunity))
+					ret += fmt.Sprintf("Extended Community:%s\n", hex.EncodeToString(com.ExtendedCommunity))
 				} else if com.Community != nil {
-					ret += fmt.Sprintf("Community:%s", hex.EncodeToString(com.Community))
+					comStr := ""
+					// Each community is described in 4 bytes
+					for i := 0; i < len(com.Community); i += 4 {
+						first := binary.BigEndian.Uint16(com.Community[i : i+2])
+						sec := binary.BigEndian.Uint16(com.Community[i+2 : i+4])
+						comStr += fmt.Sprintf(" %d:%d", first, sec)
+					}
+					ret += fmt.Sprintf("Community:%s", comStr)
 				}
 			}
 		}
