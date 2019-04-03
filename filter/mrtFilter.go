@@ -13,18 +13,25 @@ import (
 
 type Filter func(mbs *mrt.MrtBufferStack) bool
 
+const (
+	AdvPrefix = iota
+	WdrPrefix
+	AnyPrefix
+)
+
 type PrefixFilter struct {
-	prefixes []string
-	pt       pu.PrefixTree
+	prefixes  []string
+	pt        pu.PrefixTree
+	prefixLoc int
 }
 
-func NewPrefixFilterFromString(raw string, sep string) (Filter, error) {
+func NewPrefixFilterFromString(raw string, sep string, loc int) (Filter, error) {
 	prefstrings := strings.Split(raw, sep)
-	return NewPrefixFilterFromSlice(prefstrings)
+	return NewPrefixFilterFromSlice(prefstrings, loc)
 }
 
-func NewPrefixFilterFromSlice(prefstrings []string) (Filter, error) {
-	pf := PrefixFilter{}
+func NewPrefixFilterFromSlice(prefstrings []string, loc int) (Filter, error) {
+	pf := PrefixFilter{prefixLoc: loc}
 	pf.pt = pu.NewPrefixTree()
 	for _, p := range prefstrings {
 		parts := strings.Split(p, "/")
@@ -46,20 +53,24 @@ func NewPrefixFilterFromSlice(prefstrings []string) (Filter, error) {
 }
 
 func (pf PrefixFilter) filterBySeen(mbs *mrt.MrtBufferStack) bool {
-	advPrefs, err := mrt.GetAdvertizedPrefixes(mbs)
-	if err == nil {
-		for _, pref := range advPrefs {
-			if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
-				return true
+	if pf.prefixLoc == AdvPrefix || pf.prefixLoc == AnyPrefix {
+		advPrefs, err := mrt.GetAdvertizedPrefixes(mbs)
+		if err == nil {
+			for _, pref := range advPrefs {
+				if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
+					return true
+				}
 			}
 		}
 	}
 
-	wdnPrefs, err := mrt.GetWithdrawnPrefixes(mbs)
-	if err == nil {
-		for _, pref := range wdnPrefs {
-			if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
-				return true
+	if pf.prefixLoc == WdrPrefix || pf.prefixLoc == AnyPrefix {
+		wdnPrefs, err := mrt.GetWithdrawnPrefixes(mbs)
+		if err == nil {
+			for _, pref := range wdnPrefs {
+				if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
+					return true
+				}
 			}
 		}
 	}
