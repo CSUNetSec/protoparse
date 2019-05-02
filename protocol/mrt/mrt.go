@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	monpb "github.com/CSUNetSec/netsec-protobufs/bgpmon"
 	monpb2 "github.com/CSUNetSec/netsec-protobufs/bgpmon/v2"
 	pbcom "github.com/CSUNetSec/netsec-protobufs/common"
 	pbbgp "github.com/CSUNetSec/netsec-protobufs/protocol/bgp"
@@ -31,38 +30,6 @@ const (
 	PEER_INDEX_TABLE  = 1
 )
 
-func MrtToBGPCapture(data []byte) (*monpb.BGPCapture, error) {
-	mrth := NewMrtHdrBuf(data)
-	bgp4h, errmrt := mrth.Parse()
-	if errmrt != nil {
-		return nil, fmt.Errorf("Failed parsing MRT header:%s\n", errmrt)
-	}
-	bgph, errbgph := bgp4h.Parse()
-	if errbgph != nil {
-		return nil, fmt.Errorf("Failed parsing BGP4MP header:%s\n", errbgph)
-	}
-	bgpup, errbgpup := bgph.Parse()
-	if errbgpup != nil {
-		return nil, fmt.Errorf("Failed parsing BGP Header:%s\n", errbgpup)
-	}
-	_, errup := bgpup.Parse()
-	if errup != nil {
-		return nil, fmt.Errorf("Failed parsing BGP Update:%s\n", errup)
-	}
-	capture := new(monpb.BGPCapture)
-	bgphpb := bgp4h.(pp.BGP4MPHeaderer).GetHeader()
-	mrtpb := mrth.GetHeader()
-	capture.Timestamp = mrtpb.Timestamp
-	capture.PeerAs = bgphpb.PeerAs
-	capture.LocalAs = bgphpb.LocalAs
-	capture.InterfaceIndex = bgphpb.InterfaceIndex
-	capture.AddressFamily = bgphpb.AddressFamily
-	capture.PeerIp = bgphpb.PeerIp
-	capture.LocalIp = bgphpb.LocalIp
-	capture.Update = bgpup.(pp.BGPUpdater).GetUpdate()
-	return capture, nil
-}
-
 func MrtToBGPCapturev2(data []byte) (*monpb2.BGPCapture, error) {
 	mrth := NewMrtHdrBuf(data)
 	bgp4h, errmrt := mrth.Parse()
@@ -85,12 +52,12 @@ func MrtToBGPCapturev2(data []byte) (*monpb2.BGPCapture, error) {
 	bgphpb := bgp4h.(pp.BGP4MPHeaderer).GetHeader()
 	mrtpb := mrth.GetHeader()
 	capture.Timestamp = mrtpb.Timestamp
-	capture.PeerAs = bgphpb.PeerAs
-	capture.LocalAs = bgphpb.LocalAs
+	capture.Peer_AS = bgphpb.Peer_AS
+	capture.Local_AS = bgphpb.Local_AS
 	capture.InterfaceIndex = bgphpb.InterfaceIndex
 	capture.AddressFamily = bgphpb.AddressFamily
-	capture.PeerIp = bgphpb.PeerIp
-	capture.LocalIp = bgphpb.LocalIp
+	capture.Peer_IP = bgphpb.Peer_IP
+	capture.Local_IP = bgphpb.Local_IP
 	capture.Update = bgpup.(pp.BGPUpdater).GetUpdate()
 	return capture, nil
 }
@@ -126,11 +93,11 @@ func NewRIBMrtHdrBuf(buf []byte, index pp.PbVal) *mrtHhdrBuf {
 	}
 }
 
-func NewBgp4mpHdrBuf(buf []byte, as4 bool) *bgp4mpHdrBuf {
+func NewBgp4mpHdrBuf(buf []byte, AS4 bool) *bgp4mpHdrBuf {
 	return &bgp4mpHdrBuf{
 		dest:  new(pbbgp.BGP4MPHeader),
 		buf:   buf,
-		isAS4: as4,
+		isAS4: AS4,
 		isv6:  false,
 	}
 }
@@ -140,8 +107,8 @@ func (m *mrtHhdrBuf) String() string {
 }
 
 func (m *bgp4mpHdrBuf) String() string {
-	formatstr := "peer_as:%d local_as:%d interface_index:%d address_family:%d peer_ip:%s local_ip:%s"
-	return fmt.Sprintf(formatstr, m.dest.PeerAs, m.dest.LocalAs, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(util.GetIP(m.dest.PeerIp)), net.IP(util.GetIP(m.dest.LocalIp)))
+	formatstr := "peer_AS:%d local_AS:%d interface_index:%d address_family:%d peer_IP:%s local_IP:%s"
+	return fmt.Sprintf(formatstr, m.dest.Peer_AS, m.dest.Local_AS, m.dest.InterfaceIndex, m.dest.AddressFamily, net.IP(util.GetIP(m.dest.Peer_IP)), net.IP(util.GetIP(m.dest.Local_IP)))
 }
 
 func IsRib(a []byte) (bool, error) {
@@ -194,35 +161,35 @@ func (mhb *mrtHhdrBuf) Parse() (protoparse.PbVal, error) {
 }
 
 func (b4hdrb *bgp4mpHdrBuf) Parse() (protoparse.PbVal, error) {
-	if len(b4hdrb.buf) < 20 { //PeerAs + Local As + interface ind + AF + 2*ipv4 addres
+	if len(b4hdrb.buf) < 20 { //PeerAS + Local AS + interface ind + AF + 2*IPv4 addres
 		return nil, errors.New("Not enough bytes in data slice to decode BGP4MP hdr")
 	}
 	if b4hdrb.isAS4 {
-		b4hdrb.dest.PeerAs = binary.BigEndian.Uint32(b4hdrb.buf[:4])
-		b4hdrb.dest.LocalAs = binary.BigEndian.Uint32(b4hdrb.buf[4:8])
+		b4hdrb.dest.Peer_AS = binary.BigEndian.Uint32(b4hdrb.buf[:4])
+		b4hdrb.dest.Local_AS = binary.BigEndian.Uint32(b4hdrb.buf[4:8])
 		b4hdrb.buf = b4hdrb.buf[8:]
 	} else {
-		b4hdrb.dest.PeerAs = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
-		b4hdrb.dest.LocalAs = uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4]))
+		b4hdrb.dest.Peer_AS = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
+		b4hdrb.dest.Local_AS = uint32(binary.BigEndian.Uint16(b4hdrb.buf[2:4]))
 		b4hdrb.buf = b4hdrb.buf[4:]
 	}
 	b4hdrb.dest.InterfaceIndex = uint32(binary.BigEndian.Uint16(b4hdrb.buf[:2]))
 	u16af := binary.BigEndian.Uint16(b4hdrb.buf[2:4])
 	b4hdrb.dest.AddressFamily = uint32(u16af)
-	pip, lip := new(pbcom.IPAddressWrapper), new(pbcom.IPAddressWrapper)
+	pIP, lIP := new(pbcom.IPAddressWrapper), new(pbcom.IPAddressWrapper)
 	switch u16af {
 	case bgp.AFI_IP:
-		pip.Ipv4 = b4hdrb.buf[4:8]
-		lip.Ipv4 = b4hdrb.buf[8:12]
-		b4hdrb.dest.PeerIp = pip
-		b4hdrb.dest.LocalIp = lip
+		pIP.IPv4 = b4hdrb.buf[4:8]
+		lIP.IPv4 = b4hdrb.buf[8:12]
+		b4hdrb.dest.Peer_IP = pIP
+		b4hdrb.dest.Local_IP = lIP
 		b4hdrb.buf = b4hdrb.buf[12:]
 	case bgp.AFI_IP6:
 		b4hdrb.isv6 = true
-		pip.Ipv6 = b4hdrb.buf[4:20]
-		lip.Ipv6 = b4hdrb.buf[20:36]
-		b4hdrb.dest.PeerIp = pip
-		b4hdrb.dest.LocalIp = lip
+		pIP.IPv6 = b4hdrb.buf[4:20]
+		lIP.IPv6 = b4hdrb.buf[20:36]
+		b4hdrb.dest.Peer_IP = pIP
+		b4hdrb.dest.Local_IP = lIP
 		b4hdrb.buf = b4hdrb.buf[36:]
 	default:
 		return nil, errors.New("unsupported BGP4MP address family")
@@ -263,8 +230,8 @@ func (m *bgp4mpHdrBuf) GetHeader() *pbbgp.BGP4MPHeader {
 
 type bgp4mpHeaderWrapper struct {
 	*pbbgp.BGP4MPHeader
-	PeerIp  net.IP `json:"peer_ip,omitempty"`
-	LocalIp net.IP `json:"local_ip,omitempty"`
+	PeerIP  net.IP `json:"peer_IP,omitempty"`
+	LocalIP net.IP `json:"local_IP,omitempty"`
 }
 
 type mrtHeaderWrapper struct {
@@ -282,8 +249,8 @@ func (mth *mrtHhdrBuf) MarshalJSON() ([]byte, error) {
 }
 
 func NewBGP4MPHeaderWrapper(dest *pbbgp.BGP4MPHeader) *bgp4mpHeaderWrapper {
-	peer := net.IP(util.GetIP(dest.PeerIp))
-	local := net.IP(util.GetIP(dest.LocalIp))
+	peer := net.IP(util.GetIP(dest.Peer_IP))
+	local := net.IP(util.GetIP(dest.Local_IP))
 	return &bgp4mpHeaderWrapper{dest, peer, local}
 }
 

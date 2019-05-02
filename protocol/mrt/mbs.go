@@ -89,18 +89,18 @@ func GetTimestamp(mbs *MrtBufferStack) time.Time {
 // could be empty, under very weird circumstances
 func GetASPath(mbs *MrtBufferStack) ([]uint32, error) {
 	if mbs.IsRibStack() {
-		var totalaslist []uint32
+		var totalASlist []uint32
 		rib := mbs.Ribbuf.(protoparse.RIBHeaderer).GetHeader()
 		if rib == nil {
 			return nil, fmt.Errorf("Error parsing AS path in rib header")
 		}
 		for _, ent := range rib.RouteEntry {
 			if ent.Attrs != nil {
-				entryAs := getASPathFromAttrs(ent.Attrs)
-				totalaslist = append(totalaslist, entryAs...)
+				entryAS := getASPathFromAttrs(ent.Attrs)
+				totalASlist = append(totalASlist, entryAS...)
 			}
 		}
-		return totalaslist, nil
+		return totalASlist, nil
 	} else {
 		update := mbs.Bgpupbuf.(protoparse.BGPUpdater).GetUpdate()
 		if update == nil || update.Attrs == nil {
@@ -112,22 +112,22 @@ func GetASPath(mbs *MrtBufferStack) ([]uint32, error) {
 }
 
 func getASPathFromAttrs(attrs *pbbgp.BGPUpdate_Attributes) []uint32 {
-	var aslist []uint32
-	for _, segment := range attrs.AsPath {
-		if segment.AsSeq != nil && len(segment.AsSeq) > 0 {
-			aslist = append(aslist, segment.AsSeq...)
-		} else if segment.AsSet != nil && len(segment.AsSet) > 0 {
-			aslist = append(aslist, segment.AsSet...)
+	var ASlist []uint32
+	for _, segment := range attrs.ASPath {
+		if segment.ASSeq != nil && len(segment.ASSeq) > 0 {
+			ASlist = append(ASlist, segment.ASSeq...)
+		} else if segment.ASSet != nil && len(segment.ASSet) > 0 {
+			ASlist = append(ASlist, segment.ASSet...)
 		}
 	}
-	return aslist
+	return ASlist
 }
 
 // This will get the collector IP that received the message from the
 // BGP4MP header
 func GetCollector(mbs *MrtBufferStack) net.IP {
 	b4mph := mbs.Bgp4mpbuf.(protoparse.BGP4MPHeaderer).GetHeader()
-	return net.IP(util.GetIP(b4mph.LocalIp))
+	return net.IP(util.GetIP(b4mph.Local_IP))
 }
 
 type Route struct {
@@ -139,11 +139,11 @@ func (r Route) String() string {
 	return fmt.Sprintf("%s/%d", r.IP, r.Mask)
 }
 
-// This will return a list of prefixes <"ip/mask"> that appear in
-// advertized routes
+// This will return a list of prefixes <"IP/mask"> that appear in
+// advertised routes
 // Like getASPath, this does no length checking, and may return
 // an empty array
-func GetAdvertizedPrefixes(mbs *MrtBufferStack) ([]Route, error) {
+func GetAdvertisedPrefixes(mbs *MrtBufferStack) ([]Route, error) {
 	if mbs.IsRibStack() {
 		rib := mbs.Ribbuf.(protoparse.RIBHeaderer).GetHeader()
 		if rib == nil {
@@ -156,11 +156,11 @@ func GetAdvertizedPrefixes(mbs *MrtBufferStack) ([]Route, error) {
 	} else {
 		update := mbs.Bgpupbuf.(protoparse.BGPUpdater).GetUpdate()
 
-		if update == nil || update.AdvertizedRoutes == nil {
-			return nil, fmt.Errorf("Error parsing advertized routes\n")
+		if update == nil || update.AdvertisedRoutes == nil {
+			return nil, fmt.Errorf("Error parsing advertised routes\n")
 		}
 
-		return getRoutes(update.AdvertizedRoutes.Prefixes), nil
+		return getRoutes(update.AdvertisedRoutes.Prefixes), nil
 	}
 }
 
@@ -186,7 +186,7 @@ func GetWithdrawnPrefixes(mbs *MrtBufferStack) ([]Route, error) {
 	}
 }
 
-// This is just a convenience function for the getWithdrawn/Advertized routes, since
+// This is just a convenience function for the getWithdrawn/Advertised routes, since
 // they do essentially the same thing, but need to be separate
 func getRoutes(prefixes []*common.PrefixWrapper) []Route {
 	var rts []Route

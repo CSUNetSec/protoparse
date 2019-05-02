@@ -7,51 +7,53 @@ import (
 	"io/ioutil"
 )
 
-//a filter file should be populated
-//straight from a json object
+// FilterFile structs should be populated
+// straight from a json object
 type FilterFile struct {
 	MonitoredPrefixes []string
-	SourceAses        []uint32
-	DestAses          []uint32
-	MidPathAses       []uint32
-	AnywhereAses      []uint32
+	SourceASes        []uint32
+	DestASes          []uint32
+	MidPathASes       []uint32
+	AnywhereASes      []uint32
 }
 
+// XXX getFilters now only filters on advertized prefixes. we need to pass an option from filterfile on what
+// types it should invoke
 func (f FilterFile) getFilters() ([]filter.Filter, error) {
 	ret := []filter.Filter{}
 	if len(f.MonitoredPrefixes) > 0 {
-		if fil, err := filter.NewPrefixFilterFromSlice(f.MonitoredPrefixes); err != nil {
+		if fil, err := filter.NewPrefixFilterFromSlice(f.MonitoredPrefixes, filter.AdvPrefix); err != nil {
 			return nil, errors.Wrap(err, "can not create prefix filter from conf")
 		} else {
 			ret = append(ret, fil)
 		}
 	}
-	if len(f.SourceAses) > 0 {
-		if fil, err := filter.NewASFilterFromSlice(f.SourceAses, filter.AS_SOURCE); err != nil {
+	if len(f.SourceASes) > 0 {
+		if fil, err := filter.NewASFilterFromSlice(f.SourceASes, filter.AS_SOURCE); err != nil {
 			return nil, errors.Wrap(err, "can not create source AS filter from conf")
 		} else {
 			ret = append(ret, fil)
 		}
 	}
 
-	if len(f.DestAses) > 0 {
-		if fil, err := filter.NewASFilterFromSlice(f.SourceAses, filter.AS_DESTINATION); err != nil {
+	if len(f.DestASes) > 0 {
+		if fil, err := filter.NewASFilterFromSlice(f.SourceASes, filter.AS_DESTINATION); err != nil {
 			return nil, errors.Wrap(err, "can not create destination AS filter from conf")
 		} else {
 			ret = append(ret, fil)
 		}
 	}
 
-	if len(f.MidPathAses) > 0 {
-		if fil, err := filter.NewASFilterFromSlice(f.SourceAses, filter.AS_MIDPATH); err != nil {
+	if len(f.MidPathASes) > 0 {
+		if fil, err := filter.NewASFilterFromSlice(f.SourceASes, filter.AS_MIDPATH); err != nil {
 			return nil, errors.Wrap(err, "can not create midpath AS filter from conf")
 		} else {
 			ret = append(ret, fil)
 		}
 	}
 
-	if len(f.AnywhereAses) > 0 {
-		if fil, err := filter.NewASFilterFromSlice(f.SourceAses, filter.AS_ANYWHERE); err != nil {
+	if len(f.AnywhereASes) > 0 {
+		if fil, err := filter.NewASFilterFromSlice(f.SourceASes, filter.AS_ANYWHERE); err != nil {
 			return nil, errors.Wrap(err, "can not create anywhere AS filter from conf")
 		} else {
 			ret = append(ret, fil)

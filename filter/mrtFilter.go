@@ -1,6 +1,6 @@
 package filter
 
-//filters for BGP messages in MRT files
+// filters for BGP messages in MRT files
 import (
 	"fmt"
 	mrt "github.com/CSUNetSec/protoparse/protocol/mrt"
@@ -42,11 +42,11 @@ func NewPrefixFilterFromSlice(prefstrings []string, loc int) (Filter, error) {
 		if err != nil {
 			return nil, errors.Wrap(err, fmt.Sprintf("can not parse mask:%s", parts[1]))
 		}
-		parsedip := net.ParseIP(parts[0])
-		if parsedip == nil {
+		parsedIP := net.ParseIP(parts[0])
+		if parsedIP == nil {
 			return nil, errors.New(fmt.Sprintf("malformed IP address:%s", parts[0]))
 		}
-		pf.pt.Add(parsedip, mask)
+		pf.pt.Add(parsedIP, mask)
 	}
 	pf.prefixes = prefstrings
 	return pf.filterBySeen, nil
@@ -54,10 +54,10 @@ func NewPrefixFilterFromSlice(prefstrings []string, loc int) (Filter, error) {
 
 func (pf PrefixFilter) filterBySeen(mbs *mrt.MrtBufferStack) bool {
 	if pf.prefixLoc == AdvPrefix || pf.prefixLoc == AnyPrefix {
-		advPrefs, err := mrt.GetAdvertizedPrefixes(mbs)
+		advPrefs, err := mrt.GetAdvertisedPrefixes(mbs)
 		if err == nil {
 			for _, pref := range advPrefs {
-				if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
+				if pf.pt.ContainsIPMask(pref.IP, pref.Mask) {
 					return true
 				}
 			}
@@ -68,7 +68,7 @@ func (pf PrefixFilter) filterBySeen(mbs *mrt.MrtBufferStack) bool {
 		wdnPrefs, err := mrt.GetWithdrawnPrefixes(mbs)
 		if err == nil {
 			for _, pref := range wdnPrefs {
-				if pf.pt.ContainsIpMask(pref.IP, pref.Mask) {
+				if pf.pt.ContainsIPMask(pref.IP, pref.Mask) {
 					return true
 				}
 			}

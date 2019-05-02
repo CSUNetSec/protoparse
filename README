@@ -1,11 +1,17 @@
-[protoparse]
+  Protoparse is a library to parse various protocols to protocol buffers
 
- [general]
- a library to parse various protocols to protocol buffers
- current protocols:
+# Installation
+
+ Just include the library from your Golang project and use the API.
+ Running make will just run tests on this package and all subpackages.
+
+# Current protocols:
+
  - MRT (BGP4MP)
  - BGP
  - RIB
+
+# Design
 
  The main interface in protoparse is PbVal and the types that implement it
  are structures that usually have a buf []byte buffer that as the messages are
@@ -15,17 +21,7 @@
  it another object that satisfies the PbVal interface is returned. this we way we can 
  recurse in the container formats while populating the internal protocol buffer messages.
 
-[commands]
- recordfilegen: generated go code to store and retrieve generic records based on the type
-                that the user provides as arguments
+# TODO
 
-[usage]
-  run make. the gobgpdump binary should be under cmd/. Running it on an MRT file produces 
-  bgpdump like output. 
-  make test will fetch a sample file from the http://bgpmon.io archive , store it under /tmp
-  and run the gobgpdump command on it.
-  (for more info on the archive see: http://bgpmon.io/archive/help)
-
-[TODO]
- - more protocols
- - godoc
+ 1. more protocols
+ 2. godoc

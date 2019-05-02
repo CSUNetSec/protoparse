@@ -33,21 +33,21 @@ type bgpUpdateBuf struct {
 	isAS4 bool
 }
 
-func NewBgpHeaderBuf(buf []byte, v6, as4 bool) *bgpHeaderBuf {
+func NewBgpHeaderBuf(buf []byte, v6, AS4 bool) *bgpHeaderBuf {
 	return &bgpHeaderBuf{
 		dest:  new(pbbgp.BGPHeader),
 		buf:   buf,
 		isv6:  v6,
-		isAS4: as4,
+		isAS4: AS4,
 	}
 }
 
-func NewBgpUpdateBuf(buf []byte, v6, as4 bool) *bgpUpdateBuf {
+func NewBgpUpdateBuf(buf []byte, v6, AS4 bool) *bgpUpdateBuf {
 	return &bgpUpdateBuf{
 		buf:   buf,
 		dest:  new(pbbgp.BGPUpdate),
 		isv6:  v6,
-		isAS4: as4,
+		isAS4: AS4,
 	}
 }
 
@@ -60,17 +60,17 @@ func (bgpup *bgpUpdateBuf) MarshalJSON() ([]byte, error) {
 }
 
 type UpdateWrapper struct {
-	AdvertizedRoutes []*PrefixWrapper `json:"advertized_routes,omitempty"`
+	AdvertisedRoutes []*PrefixWrapper `json:"advertised_routes,omitempty"`
 	WithdrawnRoutes  []*PrefixWrapper `json:"withdrawn_routes,omitempty"`
 	Attrs            *AttrsWrapper    `json:"attrs,omitempty"`
 }
 
 func NewUpdateWrapper(update *pbbgp.BGPUpdate) *UpdateWrapper {
 	ret := &UpdateWrapper{}
-	if update.AdvertizedRoutes != nil {
-		ret.AdvertizedRoutes = make([]*PrefixWrapper, len(update.AdvertizedRoutes.Prefixes))
-		for ind, prefix := range update.AdvertizedRoutes.Prefixes {
-			ret.AdvertizedRoutes[ind] = NewPrefixWrapper(prefix)
+	if update.AdvertisedRoutes != nil {
+		ret.AdvertisedRoutes = make([]*PrefixWrapper, len(update.AdvertisedRoutes.Prefixes))
+		for ind, prefix := range update.AdvertisedRoutes.Prefixes {
+			ret.AdvertisedRoutes[ind] = NewPrefixWrapper(prefix)
 		}
 	}
 
@@ -114,15 +114,15 @@ func NewAttrsWrapper(base *pbbgp.BGPUpdate_Attributes) *AttrsWrapper {
 
 type AggregatorWrapper struct {
 	*pbbgp.BGPUpdate_Aggregator
-	Ip net.IP `json:"ip,omitempty"`
+	IP net.IP `json:"IP,omitempty"`
 }
 
 func NewAggregatorWrapper(base *pbbgp.BGPUpdate_Aggregator) *AggregatorWrapper {
 	if base == nil {
 		return nil
 	}
-	ip := net.IP(util.GetIP(base.Ip))
-	return &AggregatorWrapper{base, ip}
+	IP := net.IP(util.GetIP(base.IP))
+	return &AggregatorWrapper{base, IP}
 }
 
 func (b *bgpHeaderBuf) String() string {
@@ -139,22 +139,22 @@ func (b *bgpUpdateBuf) String() string {
 			}
 		}
 	}
-	if b.dest.AdvertizedRoutes != nil {
-		if len(b.dest.AdvertizedRoutes.Prefixes) != 0 {
-			ret += fmt.Sprintf(" Advertized Routes (%d):\n", len(b.dest.AdvertizedRoutes.Prefixes))
-			for _, ar := range b.dest.AdvertizedRoutes.Prefixes {
+	if b.dest.AdvertisedRoutes != nil {
+		if len(b.dest.AdvertisedRoutes.Prefixes) != 0 {
+			ret += fmt.Sprintf(" Advertised Routes (%d):\n", len(b.dest.AdvertisedRoutes.Prefixes))
+			for _, ar := range b.dest.AdvertisedRoutes.Prefixes {
 				ret += fmt.Sprintf("%s/%d\n", net.IP(util.GetIP(ar.GetPrefix())), ar.Mask)
 			}
 		}
 	}
 	if b.dest.Attrs != nil {
-		for _, seg := range b.dest.Attrs.AsPath {
+		for _, seg := range b.dest.Attrs.ASPath {
 			ret += "AS-Path:"
-			if seg.AsSeq != nil {
-				ret += fmt.Sprintf(" (%v) ", seg.AsSeq)
+			if seg.ASSeq != nil {
+				ret += fmt.Sprintf(" (%v) ", seg.ASSeq)
 			}
-			if seg.AsSet != nil {
-				ret += fmt.Sprintf(" {%v} ", seg.AsSet)
+			if seg.ASSet != nil {
+				ret += fmt.Sprintf(" {%v} ", seg.ASSet)
 			}
 		}
 		if b.dest.Attrs.NextHop != nil {
@@ -166,7 +166,7 @@ func (b *bgpUpdateBuf) String() string {
 		}
 		if b.dest.Attrs.Aggregator != nil {
 			ret += "\nAggregator:"
-			ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.As, net.IP(util.GetIP(b.dest.Attrs.Aggregator.Ip)))
+			ret += fmt.Sprintf("AS:%d IP:%s", b.dest.Attrs.Aggregator.AS, net.IP(util.GetIP(b.dest.Attrs.Aggregator.IP)))
 		}
 		if b.dest.Attrs.Communities != nil {
 			ret += "\nCommunities:"
@@ -194,13 +194,13 @@ func (b *bgpUpdateBuf) String() string {
 func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
 	ret := ""
 	if attrs != nil {
-		for _, seg := range attrs.AsPath {
+		for _, seg := range attrs.ASPath {
 			ret += "AS-Path:"
-			if seg.AsSeq != nil {
-				ret += fmt.Sprintf(" (%v) ", seg.AsSeq)
+			if seg.ASSeq != nil {
+				ret += fmt.Sprintf(" (%v) ", seg.ASSeq)
 			}
-			if seg.AsSet != nil {
-				ret += fmt.Sprintf(" {%v} ", seg.AsSet)
+			if seg.ASSet != nil {
+				ret += fmt.Sprintf(" {%v} ", seg.ASSet)
 			}
 		}
 		if attrs.NextHop != nil {
@@ -212,7 +212,7 @@ func AttrToString(attrs *pbbgp.BGPUpdate_Attributes) string {
 		}
 		if attrs.Aggregator != nil {
 			ret += "\nAggregator:"
-			ret += fmt.Sprintf("AS:%d IP:%s", attrs.Aggregator.As, net.IP(util.GetIP(attrs.Aggregator.Ip)))
+			ret += fmt.Sprintf("AS:%d IP:%s", attrs.Aggregator.AS, net.IP(util.GetIP(attrs.Aggregator.IP)))
 		}
 		if attrs.Communities != nil {
 			ret += "\nCommunities:"
@@ -281,14 +281,14 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 			pbuf[bytelen-1] = last_byte_value
 		}
 		if v6 {
-			ipbuf := make([]byte, 16)
-			copy(ipbuf, pbuf)
-			addr.Ipv6 = ipbuf
+			IPbuf := make([]byte, 16)
+			copy(IPbuf, pbuf)
+			addr.IPv6 = IPbuf
 		} else {
-			ipbuf := make([]byte, 4)
-			copy(ipbuf, pbuf)
-			addr.Ipv4 = ipbuf
-			//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
+			IPbuf := make([]byte, 4)
+			copy(IPbuf, pbuf)
+			addr.IPv4 = IPbuf
+			//fmt.Printf(":IP:%s / %d:\n", net.IP(addr.IPv4).To4().String(), bitlen)
 		}
 		route.Mask = uint32(bitlen)
 		route.Prefix = addr
@@ -298,17 +298,17 @@ func readPrefix(buf []byte, v6 bool) []*pbcom.PrefixWrapper {
 	return wpslice
 }
 
-func ParseAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
-	return readAttrs(buf, as4, v6)
+func ParseAttrs(buf []byte, AS4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
+	return readAttrs(buf, AS4, v6)
 }
 
 //this function returns the attributes but also the withdrawn prefixes or advertised prefixes found in MP_REACH/UNREACH
 //because RFC2283 decided to shove that in the attributes. thanks ietf.
-func readAttrs(buf []byte, as4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
+func readAttrs(buf []byte, AS4, v6 bool) (*pbbgp.BGPUpdate_Attributes, error, []*pbcom.PrefixWrapper, []*pbcom.PrefixWrapper) {
 	attrs := new(pbbgp.BGPUpdate_Attributes)
 	var (
 		attrlen uint16
-		tempas  uint32
+		tempAS  uint32
 		mpadv   []*pbcom.PrefixWrapper
 		mpwdr   []*pbcom.PrefixWrapper
 	)
@@ -380,7 +380,7 @@ readattr:
 		//fmt.Printf(" origin: %s ", attrs.Origin)
 	case pbbgp.BGPUpdate_Attributes_AS_PATH:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS_PATH)
-		//fmt.Printf(" [as-path] ")
+		//fmt.Printf(" [AS-path] ")
 		//reading  path segment type
 	readseg:
 		seg := new(pbbgp.BGPUpdate_ASPathSegment)
@@ -395,37 +395,37 @@ readattr:
 		case 2:
 			setp = false
 		default:
-			//fmt.Printf("\n--err aspath--\n")
+			//fmt.Printf("\n--err ASpath--\n")
 			return nil, fmt.Errorf("unknown path segment type %d", ptype), nil, nil
 		}
 		plen := int(buf[1])
 		buf = buf[2:]
 		totskip += 2
 		switch {
-		case !as4 && len(buf) < int(plen)*2:
+		case !AS4 && len(buf) < int(plen)*2:
 			return nil, fmt.Errorf("not enough bytes for an AS2 path segment of length %d", plen), nil, nil
-		case as4 && len(buf) < int(plen)*4:
+		case AS4 && len(buf) < int(plen)*4:
 			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen), nil, nil
 		}
 
 		for pind := 0; pind < plen; pind++ {
-			if as4 {
-				tempas = binary.BigEndian.Uint32(buf[:4])
+			if AS4 {
+				tempAS = binary.BigEndian.Uint32(buf[:4])
 				buf = buf[4:]
 				totskip += 4
 			} else {
-				tempas = uint32(binary.BigEndian.Uint16(buf[:2]))
+				tempAS = uint32(binary.BigEndian.Uint16(buf[:2]))
 				buf = buf[2:]
 				totskip += 2
 			}
 			if setp {
-				seg.AsSet = append(seg.AsSet, tempas)
+				seg.ASSet = append(seg.ASSet, tempAS)
 			} else {
-				seg.AsSeq = append(seg.AsSeq, tempas)
+				seg.ASSeq = append(seg.ASSeq, tempAS)
 			}
 		}
-		attrs.AsPath = append(attrs.AsPath, seg)
-		if totskip < int(attrlen) { // XXX more as path segments?
+		attrs.ASPath = append(attrs.ASPath, seg)
+		if totskip < int(attrlen) { // XXX more AS path segments?
 			//fmt.Printf("jumping to readseg again until now read:%d attrlen:%d", totskip, attrlen)
 			goto readseg
 		}
@@ -435,20 +435,20 @@ readattr:
 		addr := new(pbcom.IPAddressWrapper)
 		switch {
 		case v6 == true && attrlen == 16:
-			ipbuf := make([]byte, 16)
-			copy(ipbuf, buf[:attrlen])
-			//fmt.Sprintf("got v6 :%v", ipbuf)
-			addr.Ipv6 = ipbuf
+			IPbuf := make([]byte, 16)
+			copy(IPbuf, buf[:attrlen])
+			//fmt.Sprintf("got v6 :%v", IPbuf)
+			addr.IPv6 = IPbuf
 		case v6 == false && attrlen == 4:
-			ipbuf := make([]byte, 4)
-			copy(ipbuf, buf[:attrlen])
-			//fmt.Sprintf("got v4 :%v", ipbuf)
-			addr.Ipv4 = ipbuf
+			IPbuf := make([]byte, 4)
+			copy(IPbuf, buf[:attrlen])
+			//fmt.Sprintf("got v4 :%v", IPbuf)
+			addr.IPv4 = IPbuf
 		default:
 			//fmt.Sprintf("got fail")
-			return nil, fmt.Errorf("nexthop ip bytes don't agree in length with function invocation ip type"), nil, nil
+			return nil, fmt.Errorf("nexthop IP bytes don't agree in length with function invocation IP type"), nil, nil
 		}
-		//fmt.Printf(":ip:%s / %d:\n", net.IP(addr.Ipv4).To4().String(), bitlen)
+		//fmt.Printf(":IP:%s / %d:\n", net.IP(addr.IPv4).To4().String(), bitlen)
 		attrs.NextHop = addr
 
 	case pbbgp.BGPUpdate_Attributes_MULTI_EXIT:
@@ -479,33 +479,33 @@ readattr:
 		aggr := new(pbbgp.BGPUpdate_Aggregator)
 		switch {
 		case attrlen == 6: // 2 byte AS and 4 byte IP
-			as := uint32(binary.BigEndian.Uint16(buf[:2]))
-			aggr.As = as
-			ipbuf := make([]byte, 4)
-			copy(ipbuf, buf[2:6])
-			addr.Ipv4 = ipbuf
+			AS := uint32(binary.BigEndian.Uint16(buf[:2]))
+			aggr.AS = AS
+			IPbuf := make([]byte, 4)
+			copy(IPbuf, buf[2:6])
+			addr.IPv4 = IPbuf
 		case attrlen == 8: // 4 byte AS and 4 byte IP
-			as := binary.BigEndian.Uint32(buf[:4])
-			aggr.As = as
-			ipbuf := make([]byte, 4)
-			copy(ipbuf, buf[4:8])
-			addr.Ipv4 = ipbuf
+			AS := binary.BigEndian.Uint32(buf[:4])
+			aggr.AS = AS
+			IPbuf := make([]byte, 4)
+			copy(IPbuf, buf[4:8])
+			addr.IPv4 = IPbuf
 		case attrlen == 18: // 2byte AS and 16 byte IP
-			as := uint32(binary.BigEndian.Uint16(buf[:2]))
-			aggr.As = as
-			ipbuf := make([]byte, 16)
-			copy(ipbuf, buf[2:18])
-			addr.Ipv6 = ipbuf
+			AS := uint32(binary.BigEndian.Uint16(buf[:2]))
+			aggr.AS = AS
+			IPbuf := make([]byte, 16)
+			copy(IPbuf, buf[2:18])
+			addr.IPv6 = IPbuf
 		case attrlen == 20: // 2byte AS and 16 byte IP
-			as := binary.BigEndian.Uint32(buf[:4])
-			aggr.As = as
-			ipbuf := make([]byte, 16)
-			copy(ipbuf, buf[4:20])
-			addr.Ipv6 = ipbuf
+			AS := binary.BigEndian.Uint32(buf[:4])
+			aggr.AS = AS
+			IPbuf := make([]byte, 16)
+			copy(IPbuf, buf[4:20])
+			addr.IPv6 = IPbuf
 		default:
 			return nil, fmt.Errorf("not correct amount of bytes for Aggregator Attribute"), nil, nil
 		}
-		aggr.Ip = addr
+		aggr.IP = addr
 		attrs.Aggregator = aggr
 	case pbbgp.BGPUpdate_Attributes_COMMUNITY:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_COMMUNITY)
@@ -534,25 +534,25 @@ readattr:
 			addr := new(pbcom.IPAddressWrapper)
 			switch {
 			case v6 == true && nhl == 16:
-				ipbuf := make([]byte, 16)
-				copy(ipbuf, buf[:nhl])
-				//fmt.Sprintf("got v6 :%v", ipbuf)
-				addr.Ipv6 = ipbuf
+				IPbuf := make([]byte, 16)
+				copy(IPbuf, buf[:nhl])
+				//fmt.Sprintf("got v6 :%v", IPbuf)
+				addr.IPv6 = IPbuf
 			//http://networkengineering.stackexchange.com/questions/12556/how-to-interpret-mp-reach-nlri-attribute-with-address-length-of-32-bytes-contain
-			//this is the global ipv6 and the linklocal ipv6
+			//this is the global IPv6 and the linklocal IPv6
 			//RFC- 2545 Use of BGP-4 Multiprotocol Extensions for IPv6 Inter-Domain Routing"
 			case v6 == true && nhl == 32:
-				ipbuf := make([]byte, 16)
-				copy(ipbuf, buf[:16])
-				addr.Ipv6 = ipbuf //XXX for now ignoring the link local ipv6
+				IPbuf := make([]byte, 16)
+				copy(IPbuf, buf[:16])
+				addr.IPv6 = IPbuf //XXX for now ignoring the link local ipv6
 			case v6 == false && nhl == 4:
-				ipbuf := make([]byte, 4)
-				copy(ipbuf, buf[:nhl])
-				//fmt.Sprintf("got v4 :%v", ipbuf)
-				addr.Ipv4 = ipbuf
+				IPbuf := make([]byte, 4)
+				copy(IPbuf, buf[:nhl])
+				//fmt.Sprintf("got v4 :%v", IPbuf)
+				addr.IPv4 = IPbuf
 			default:
 				//fmt.Sprintf("got fail")
-				return nil, fmt.Errorf("nexthop ip bytes (%d) in MP_REACH don't agree in length with function invocation (v6:%v) ip type", nhl, v6), nil, nil
+				return nil, fmt.Errorf("nexthop IP bytes (%d) in MP_REACH don't agree in length with function invocation (v6:%v) IP type", nhl, v6), nil, nil
 			}
 			attrs.NextHop = addr //This next hop is prefered if it exists
 		} else {
@@ -610,7 +610,7 @@ readattr:
 		attrs.Communities.Communities = append(attrs.Communities.Communities, com)
 	case pbbgp.BGPUpdate_Attributes_AS4_PATH:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_PATH)
-		//fmt.Printf(" [as4-path] ")
+		//fmt.Printf(" [AS4-path] ")
 		//reading  path segment type
 	readseg4:
 		seg := new(pbbgp.BGPUpdate_ASPathSegment)
@@ -634,22 +634,22 @@ readattr:
 			return nil, fmt.Errorf("not enough bytes for an AS4 path segment of length %d", plen), nil, nil
 		}
 		for pind := 0; pind < plen; pind++ {
-			as := binary.BigEndian.Uint32(buf[:4])
+			AS := binary.BigEndian.Uint32(buf[:4])
 			if setp {
-				seg.AsSet = append(seg.AsSet, as)
+				seg.ASSet = append(seg.ASSet, AS)
 			} else {
-				seg.AsSeq = append(seg.AsSeq, as)
+				seg.ASSeq = append(seg.ASSeq, AS)
 			}
 			buf = buf[4:]
 			totskip += 4
 		}
-		attrs.AsPath = append(attrs.AsPath, seg)
-		if totskip < int(attrlen) { // more as path segments?
+		attrs.ASPath = append(attrs.ASPath, seg)
+		if totskip < int(attrlen) { // more AS path segments?
 			goto readseg4
 		}
 	case pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR:
 		attrs.Types = append(attrs.Types, pbbgp.BGPUpdate_Attributes_AS4_AGGREGATOR)
-		//fmt.Printf(" [as4-aggregator] ")
+		//fmt.Printf(" [AS4-aggregator] ")
 	case pbbgp.BGPUpdate_Attributes_IPV6_ADDRESS_SPECIFIC_EXTENDED_COMMUNITY:
 		attrs.Types = append(attrs.Types, typebyte) // we just skip over the contents of the attribute for now.
 		//fmt.Printf(" [IPV6 extended community] ")
@@ -710,8 +710,8 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		b.dest.Attrs = attrs
 		nlrilen := uplen - 4 - int(attrlen) - wlen
 		if len(mpadv) != 0 { // we got advertised routes from mp_reach
-			b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
-			b.dest.AdvertizedRoutes.Prefixes = mpadv
+			b.dest.AdvertisedRoutes = new(pbbgp.BGPUpdate_AdvertisedRoutes)
+			b.dest.AdvertisedRoutes.Prefixes = mpadv
 		}
 		if len(mpwdr) != 0 {
 			if b.dest.WithdrawnRoutes == nil { //make a new one
@@ -727,11 +727,11 @@ func (b *bgpUpdateBuf) Parse() (protoparse.PbVal, error) {
 		//fmt.Println("nrlilen:", nlrilen)
 		nlrislice := readPrefix(b.buf[:nlrilen], b.isv6)
 		b.buf = b.buf[nlrilen:]
-		if b.dest.AdvertizedRoutes == nil { // make a new one
-			b.dest.AdvertizedRoutes = new(pbbgp.BGPUpdate_AdvertizedRoutes)
-			b.dest.AdvertizedRoutes.Prefixes = nlrislice
+		if b.dest.AdvertisedRoutes == nil { // make a new one
+			b.dest.AdvertisedRoutes = new(pbbgp.BGPUpdate_AdvertisedRoutes)
+			b.dest.AdvertisedRoutes.Prefixes = nlrislice
 		} else { // append them to the mp ones
-			b.dest.AdvertizedRoutes.Prefixes = append(b.dest.AdvertizedRoutes.Prefixes, nlrislice...)
+			b.dest.AdvertisedRoutes.Prefixes = append(b.dest.AdvertisedRoutes.Prefixes, nlrislice...)
 		}
 	}
 

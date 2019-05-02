@@ -13,7 +13,7 @@ type inRes struct {
 }
 
 type ipMask struct {
-	ip   net.IP
+	IP   net.IP
 	mask uint8
 }
 
@@ -30,14 +30,14 @@ var ipkeys = []inRes{inRes{"10.0.0.1/16", "0000101000000000"},
 func parseIP(s string) ipMask {
 	parts := strings.Split(s, "/")
 	mask, _ := strconv.ParseUint(parts[1], 10, 32)
-	pip := net.ParseIP(parts[0])
-	return ipMask{pip, uint8(mask)}
+	pIP := net.ParseIP(parts[0])
+	return ipMask{pIP, uint8(mask)}
 }
 
 func TestIPToRadixKey(t *testing.T) {
 	for i := range ipkeys {
 		im := parseIP(ipkeys[i].in)
-		key := IpToRadixkey(im.ip, im.mask)
+		key := IPToRadixkey(im.IP, im.mask)
 
 		if ipkeys[i].out != key {
 			t.Errorf("IP:%s Key:%s Expected:%s", ipkeys[i].in, key, ipkeys[i].out)
@@ -46,8 +46,8 @@ func TestIPToRadixKey(t *testing.T) {
 }
 
 type prefTester struct {
-	parentIp string
-	childIp  string
+	parentIP string
+	childIP  string
 	isChild  bool
 }
 
@@ -58,12 +58,12 @@ var prefTests = []prefTester{prefTester{"10.0.0.0/16", "10.0.0.0/15", false},
 func TestPrefixTree(t *testing.T) {
 	for _, curTest := range prefTests {
 		pt := NewPrefixTree()
-		par := parseIP(curTest.parentIp)
-		pt.Add(par.ip, par.mask)
-		child := parseIP(curTest.childIp)
-		isC := pt.ContainsIpMask(child.ip, child.mask)
+		par := parseIP(curTest.parentIP)
+		pt.Add(par.IP, par.mask)
+		child := parseIP(curTest.childIP)
+		isC := pt.ContainsIPMask(child.IP, child.mask)
 		if isC != curTest.isChild {
-			t.Errorf("Parent:%s Child:%s Expected:%t Got:%t", curTest.parentIp, curTest.childIp, curTest.isChild, isC)
+			t.Errorf("Parent:%s Child:%s Expected:%t Got:%t", curTest.parentIP, curTest.childIP, curTest.isChild, isC)
 		}
 	}
 }
@@ -71,7 +71,7 @@ func TestPrefixTree(t *testing.T) {
 func TestEmptyPrefixTree(t *testing.T) {
 	pt := NewPrefixTree()
 	pt.Add(net.IP{0, 0, 0, 0}, 0)
-	if !pt.ContainsIpMask(net.IP{1, 2, 3, 4}, 32) {
+	if !pt.ContainsIPMask(net.IP{1, 2, 3, 4}, 32) {
 		t.Errorf("Contains error")
 	}
 }

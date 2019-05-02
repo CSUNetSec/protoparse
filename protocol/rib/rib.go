@@ -80,24 +80,24 @@ func (r *ribBuf) parseRIB() (pp.PbVal, error) {
 			pbuf[bytelen-1] = last_byte_value
 		}
 
-		var ipbuf []byte
+		var IPbuf []byte
 		if r.isv6 {
-			ipbuf = make([]byte, 16)
-			copy(ipbuf, pbuf)
-			prefWrapper.Prefix.Ipv6 = ipbuf
+			IPbuf = make([]byte, 16)
+			copy(IPbuf, pbuf)
+			prefWrapper.Prefix.IPv6 = IPbuf
 		} else {
-			ipbuf = make([]byte, 4)
-			copy(ipbuf, pbuf)
-			prefWrapper.Prefix.Ipv4 = ipbuf
+			IPbuf = make([]byte, 4)
+			copy(IPbuf, pbuf)
+			prefWrapper.Prefix.IPv4 = IPbuf
 		}
 		prefWrapper.Mask = uint32(bitlen)
 		r.buf = r.buf[bytelen:]
 	} else {
 		if r.isv6 {
-			prefWrapper.Prefix.Ipv6 = make([]byte, 16)
+			prefWrapper.Prefix.IPv6 = make([]byte, 16)
 			prefWrapper.Mask = 0
 		} else {
-			prefWrapper.Prefix.Ipv4 = make([]byte, 4)
+			prefWrapper.Prefix.IPv4 = make([]byte, 4)
 			prefWrapper.Mask = 0
 		}
 	}
@@ -189,8 +189,8 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 	peerType := uint8(r.buf[0])
 	r.buf = r.buf[1:]
 
-	as4 := (peerType&0x2 != 0)
-	ipv6 := (peerType&0x1 != 0)
+	AS4 := (peerType&0x2 != 0)
+	IPv6 := (peerType&0x1 != 0)
 
 	if len(r.buf) < 4 {
 		return nil, fmt.Errorf("rib: Buffer too small to read BGP id")
@@ -199,43 +199,43 @@ func (r *ribBuf) parsePeerEntry() (*pbbgp.PeerEntry, error) {
 	r.buf = r.buf[4:]
 
 	peerIP := new(pbcom.IPAddressWrapper)
-	if ipv6 {
-		ipbuf := make([]byte, 16)
+	if IPv6 {
+		IPbuf := make([]byte, 16)
 		if len(r.buf) < 16 {
-			return nil, fmt.Errorf("rib: Buffer too small to read peer ipv6")
+			return nil, fmt.Errorf("rib: Buffer too small to read peer IPv6")
 		}
-		copy(ipbuf, r.buf[:16])
+		copy(IPbuf, r.buf[:16])
 		r.buf = r.buf[16:]
-		peerIP.Ipv6 = ipbuf
+		peerIP.IPv6 = IPbuf
 	} else {
-		ipbuf := make([]byte, 4)
+		IPbuf := make([]byte, 4)
 		if len(r.buf) < 4 {
-			return nil, fmt.Errorf("rib: Buffer too small to read peer ipv4")
+			return nil, fmt.Errorf("rib: Buffer too small to read peer IPv4")
 		}
-		copy(ipbuf, r.buf[:4])
+		copy(IPbuf, r.buf[:4])
 		r.buf = r.buf[4:]
-		peerIP.Ipv4 = ipbuf
+		peerIP.IPv4 = IPbuf
 	}
 
-	var asNum uint32
-	if as4 {
+	var ASNum uint32
+	if AS4 {
 		if len(r.buf) < 4 {
 			return nil, fmt.Errorf("rib: Buffer too small to read AS number")
 		}
-		asNum = binary.BigEndian.Uint32(r.buf[:4])
+		ASNum = binary.BigEndian.Uint32(r.buf[:4])
 		r.buf = r.buf[4:]
 	} else {
 		if len(r.buf) < 2 {
 			return nil, fmt.Errorf("rib: Buffer too small to read AS number")
 		}
-		asNum = uint32(binary.BigEndian.Uint16(r.buf[:2]))
+		ASNum = uint32(binary.BigEndian.Uint16(r.buf[:2]))
 		r.buf = r.buf[2:]
 	}
 
 	pe := new(pbbgp.PeerEntry)
 	pe.PeerId = id
-	pe.PeerAs = asNum
-	pe.PeerIp = peerIP
+	pe.Peer_AS = ASNum
+	pe.Peer_IP = peerIP
 
 	return pe, nil
 }
@@ -264,7 +264,7 @@ func (r *ribBuf) String() string {
 }
 
 func peerToString(p *pbbgp.PeerEntry) string {
-	return fmt.Sprintf("%s AS%d", net.IP(util.GetIP(p.PeerIp)), p.PeerAs)
+	return fmt.Sprintf("%s AS%d", net.IP(util.GetIP(p.Peer_IP)), p.Peer_AS)
 }
 
 func ribEntryToString(r *pbbgp.RIBEntry, index pp.PbVal) string {
@@ -316,12 +316,12 @@ func newribEventWrapper(rib *pbbgp.RIBEntry, ind *ribBuf) *ribEventWrapper {
 
 type ribPeerWrapper struct {
 	*pbbgp.PeerEntry
-	Peer_ip net.IP `json:"peer_ip"`
+	Peer_IP net.IP `json:"peer_IP"`
 }
 
 func newribPeerWrapper(p *pbbgp.PeerEntry) *ribPeerWrapper {
 	rpw := ribPeerWrapper{}
 	rpw.PeerEntry = p
-	rpw.Peer_ip = net.IP(util.GetIP(p.PeerIp))
+	rpw.Peer_IP = net.IP(util.GetIP(p.Peer_IP))
 	return &rpw
 }
